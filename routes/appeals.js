@@ -1,12 +1,7 @@
 const express = require("express");
 const { body, validationResult } = require("express-validator");
 const Appeal = require("../models/Appeal");
-const User = require("../models/User");
-const {
-  auth,
-  requireStudent,
-  requireAdminOrReviewer,
-} = require("../middleware/auth");
+const { auth, requireStudent } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -18,20 +13,66 @@ router.post(
   [
     auth,
     requireStudent,
-    body("title").trim().notEmpty().withMessage("Title is required"),
-    body("description")
+    // Declaration & Deadline
+    body("declaration").isBoolean().withMessage("Declaration must be accepted"),
+    body("deadlineCheck")
+      .isBoolean()
+      .withMessage("Deadline check must be confirmed"),
+
+    // Personal Information
+    body("firstName").trim().notEmpty().withMessage("First name is required"),
+    body("lastName").trim().notEmpty().withMessage("Last name is required"),
+    body("studentId").trim().notEmpty().withMessage("Student ID is required"),
+    body("email")
+      .isEmail()
+      .normalizeEmail()
+      .withMessage("Valid email is required"),
+    body("phone").optional().trim(),
+
+    // Adviser Information
+    body("hasAdviser").optional().isBoolean(),
+    body("adviserName").optional().trim(),
+    body("adviserEmail").optional().isEmail().normalizeEmail(),
+    body("adviserPhone").optional().trim(),
+
+    // Appeal Details
+    body("appealType")
+      .isIn([
+        "Academic Judgment",
+        "Procedural Irregularity",
+        "Extenuating Circumstances",
+        "Assessment Irregularity",
+        "Other",
+      ])
+      .withMessage("Valid appeal type is required"),
+    body("grounds")
+      .isArray({ min: 1 })
+      .withMessage("At least one ground must be selected"),
+    body("grounds.*")
+      .isIn([
+        "Illness or medical condition",
+        "Bereavement",
+        "Personal circumstances",
+        "Technical issues during assessment",
+        "Inadequate supervision",
+        "Unclear assessment criteria",
+        "Other",
+      ])
+      .withMessage("Invalid ground selected"),
+    body("statement")
       .trim()
       .notEmpty()
-      .withMessage("Description is required"),
-    body("grounds").isIn([
-      "extenuating circumstances",
-      "procedural irregularity",
-      "academic judgment",
-      "other",
-    ]),
+      .withMessage("Appeal statement is required"),
+
+    // Academic Context
     body("moduleCode").optional().trim(),
     body("academicYear").notEmpty().withMessage("Academic year is required"),
     body("semester").optional().isIn(["1", "2", "summer", "full year"]),
+
+    // Confirmation
+    body("confirmAll")
+      .isBoolean()
+      .withMessage("Final confirmation must be accepted"),
   ],
   async (req, res) => {
     try {
@@ -42,20 +83,57 @@ router.post(
       }
 
       const {
-        title,
-        description,
+        declaration,
+        deadlineCheck,
+        firstName,
+        lastName,
+        studentId,
+        email,
+        phone,
+        hasAdviser,
+        adviserName,
+        adviserEmail,
+        adviserPhone,
+        appealType,
         grounds,
+        statement,
         moduleCode,
         academicYear,
         semester,
+        confirmAll,
       } = req.body;
+
+      // Verify user has accepted all required confirmations
+      if (!declaration || !deadlineCheck || !confirmAll) {
+        return res.status(400).json({
+          message: "All required confirmations must be accepted",
+        });
+      }
+
+      // Verify student ID matches the authenticated user
+      if (studentId !== req.user.studentId) {
+        return res.status(400).json({
+          message: "Student ID must match your registered student ID",
+        });
+      }
 
       // Create new appeal
       const appeal = new Appeal({
         student: req.user._id,
-        title,
-        description,
+        declaration,
+        deadlineCheck,
+        firstName,
+        lastName,
+        studentId,
+        email,
+        phone,
+        hasAdviser,
+        adviserName: hasAdviser ? adviserName : undefined,
+        adviserEmail: hasAdviser ? adviserEmail : undefined,
+        adviserPhone: hasAdviser ? adviserPhone : undefined,
+        appealType,
         grounds,
+        statement,
         moduleCode,
         academicYear,
         semester,
@@ -66,7 +144,7 @@ router.post(
       // Add to timeline
       appeal.timeline.push({
         action: "Appeal submitted",
-        description: "Appeal created and submitted for review",
+        description: `Appeal created and submitted for review - Type: ${appealType}`,
         performedBy: req.user._id,
       });
 
@@ -87,31 +165,11 @@ router.post(
 );
 
 // @route   GET /api/appeals
-// @desc    Get appeals based on user role
-// @access  Private
-router.get("/", auth, async (req, res) => {
+// @desc    Get student's own appeals
+// @access  Private (Student)
+router.get("/", auth, requireStudent, async (req, res) => {
   try {
-    let appeals;
-    let query = {};
-
-    switch (req.user.role) {
-      case "student":
-        // Students can only see their own appeals
-        query.student = req.user._id;
-        break;
-      case "admin":
-        // Admins can see all appeals
-        break;
-      case "reviewer":
-        // Reviewers can see appeals assigned to them or unassigned appeals
-        query.$or = [
-          { assignedReviewer: req.user._id },
-          { assignedReviewer: { $exists: false } },
-        ];
-        break;
-    }
-
-    appeals = await Appeal.find(query)
+    const appeals = await Appeal.find({ student: req.user._id })
       .populate("student", "firstName lastName email studentId")
       .populate("assignedReviewer", "firstName lastName")
       .populate("assignedAdmin", "firstName lastName")
@@ -125,11 +183,14 @@ router.get("/", auth, async (req, res) => {
 });
 
 // @route   GET /api/appeals/:id
-// @desc    Get specific appeal by ID
-// @access  Private
-router.get("/:id", auth, async (req, res) => {
+// @desc    Get specific appeal by ID (student's own appeal)
+// @access  Private (Student)
+router.get("/:id", auth, requireStudent, async (req, res) => {
   try {
-    const appeal = await Appeal.findById(req.params.id)
+    const appeal = await Appeal.findOne({
+      _id: req.params.id,
+      student: req.user._id,
+    })
       .populate("student", "firstName lastName email studentId")
       .populate("assignedReviewer", "firstName lastName")
       .populate("assignedAdmin", "firstName lastName")
@@ -140,14 +201,6 @@ router.get("/:id", auth, async (req, res) => {
       return res.status(404).json({ message: "Appeal not found" });
     }
 
-    // Check access permissions
-    if (
-      req.user.role === "student" &&
-      appeal.student.toString() !== req.user._id.toString()
-    ) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
     res.json({ appeal });
   } catch (error) {
     console.error("Get appeal error:", error);
@@ -155,91 +208,15 @@ router.get("/:id", auth, async (req, res) => {
   }
 });
 
-// @route   PUT /api/appeals/:id
-// @desc    Update appeal (admin/reviewer only)
-// @access  Private (Admin/Reviewer)
-router.put(
-  "/:id",
-  [
-    auth,
-    requireAdminOrReviewer,
-    body("status")
-      .optional()
-      .isIn([
-        "submitted",
-        "under review",
-        "awaiting information",
-        "decision made",
-        "resolved",
-        "rejected",
-      ]),
-    body("priority").optional().isIn(["low", "medium", "high", "urgent"]),
-    body("assignedReviewer").optional().isMongoId(),
-    body("assignedAdmin").optional().isMongoId(),
-  ],
-  async (req, res) => {
-    try {
-      // Check validation errors
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const appeal = await Appeal.findById(req.params.id);
-      if (!appeal) {
-        return res.status(404).json({ message: "Appeal not found" });
-      }
-
-      const { status, priority, assignedReviewer, assignedAdmin } = req.body;
-      const updates = {};
-
-      if (status) updates.status = status;
-      if (priority) updates.priority = priority;
-      if (assignedReviewer) updates.assignedReviewer = assignedReviewer;
-      if (assignedAdmin) updates.assignedAdmin = assignedAdmin;
-
-      // Add to timeline
-      const timelineEntry = {
-        action: "Appeal updated",
-        description: `Updated by ${req.user.role}: ${req.user.firstName} ${req.user.lastName}`,
-        performedBy: req.user._id,
-      };
-
-      if (status) {
-        timelineEntry.description += ` - Status changed to: ${status}`;
-      }
-
-      updates.timeline = [...appeal.timeline, timelineEntry];
-
-      const updatedAppeal = await Appeal.findByIdAndUpdate(
-        req.params.id,
-        updates,
-        { new: true, runValidators: true }
-      )
-        .populate("student", "firstName lastName email studentId")
-        .populate("assignedReviewer", "firstName lastName")
-        .populate("assignedAdmin", "firstName lastName");
-
-      res.json({
-        message: "Appeal updated successfully",
-        appeal: updatedAppeal,
-      });
-    } catch (error) {
-      console.error("Appeal update error:", error);
-      res.status(500).json({ message: "Server error during appeal update" });
-    }
-  }
-);
-
 // @route   POST /api/appeals/:id/notes
-// @desc    Add note to appeal
-// @access  Private
+// @desc    Add note to appeal (student's own appeal)
+// @access  Private (Student)
 router.post(
   "/:id/notes",
   [
     auth,
+    requireStudent,
     body("content").trim().notEmpty().withMessage("Note content is required"),
-    body("isInternal").optional().isBoolean(),
   ],
   async (req, res) => {
     try {
@@ -249,32 +226,21 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const appeal = await Appeal.findById(req.params.id);
+      const appeal = await Appeal.findOne({
+        _id: req.params.id,
+        student: req.user._id,
+      });
+
       if (!appeal) {
         return res.status(404).json({ message: "Appeal not found" });
       }
 
-      // Check access permissions
-      if (
-        req.user.role === "student" &&
-        appeal.student.toString() !== req.user._id.toString()
-      ) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const { content, isInternal = false } = req.body;
-
-      // Students can only add public notes
-      if (req.user.role === "student" && isInternal) {
-        return res
-          .status(403)
-          .json({ message: "Students cannot add internal notes" });
-      }
+      const { content } = req.body;
 
       const note = {
         content,
         author: req.user._id,
-        isInternal,
+        isInternal: false, // Students can only add public notes
       };
 
       appeal.notes.push(note);
@@ -283,7 +249,7 @@ router.post(
       // Add to timeline
       appeal.timeline.push({
         action: "Note added",
-        description: `Note added by ${req.user.role}: ${req.user.firstName} ${req.user.lastName}`,
+        description: `Note added by student: ${req.user.firstName} ${req.user.lastName}`,
         performedBy: req.user._id,
       });
 
@@ -302,80 +268,67 @@ router.post(
   }
 );
 
-// @route   PUT /api/appeals/:id/decision
-// @desc    Make decision on appeal (reviewer only)
-// @access  Private (Reviewer)
-router.put(
-  "/:id/decision",
-  [
-    auth,
-    requireAdminOrReviewer, // Changed from requireRole(['reviewer']) to requireAdminOrReviewer
-    body("outcome").isIn([
-      "upheld",
-      "partially upheld",
-      "rejected",
-      "withdrawn",
-    ]),
-    body("reason").trim().notEmpty().withMessage("Decision reason is required"),
-  ],
-  async (req, res) => {
-    try {
-      // Check validation errors
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
+// @route   GET /api/appeals/dashboard
+// @desc    Get student's appeal statistics for dashboard
+// @access  Private (Student)
+router.get("/dashboard", auth, requireStudent, async (req, res) => {
+  try {
+    const query = { student: req.user._id };
 
-      const appeal = await Appeal.findById(req.params.id);
-      if (!appeal) {
-        return res.status(404).json({ message: "Appeal not found" });
-      }
+    // Get appeals by status
+    const statusCounts = await Appeal.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
 
-      // Check if reviewer is assigned to this appeal
-      if (
-        appeal.assignedReviewer &&
-        appeal.assignedReviewer.toString() !== req.user._id.toString()
-      ) {
-        return res
-          .status(403)
-          .json({ message: "You are not assigned to review this appeal" });
-      }
+    // Get appeals by type
+    const typeCounts = await Appeal.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: "$appealType",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
 
-      const { outcome, reason } = req.body;
+    // Get recent appeals
+    const recentAppeals = await Appeal.find(query)
+      .populate("student", "firstName lastName email studentId")
+      .sort({ createdAt: -1 })
+      .limit(5);
 
-      appeal.decision = {
-        outcome,
-        reason,
-        decisionDate: new Date(),
-        decidedBy: req.user._id,
-      };
+    // Format status counts
+    const statusSummary = {
+      submitted: 0,
+      "under review": 0,
+      "awaiting information": 0,
+      "decision made": 0,
+      resolved: 0,
+      rejected: 0,
+    };
 
-      appeal.status = "decision made";
+    statusCounts.forEach((item) => {
+      statusSummary[item._id] = item.count;
+    });
 
-      // Add to timeline
-      appeal.timeline.push({
-        action: "Decision made",
-        description: `Decision: ${outcome} - ${reason}`,
-        performedBy: req.user._id,
-      });
-
-      await appeal.save();
-
-      await appeal
-        .populate("student", "firstName lastName email studentId")
-        .populate("decision.decidedBy", "firstName lastName");
-
-      res.json({
-        message: "Decision recorded successfully",
-        appeal,
-      });
-    } catch (error) {
-      console.error("Decision error:", error);
-      res
-        .status(500)
-        .json({ message: "Server error while recording decision" });
-    }
+    res.json({
+      statusSummary,
+      typeCounts,
+      recentAppeals,
+      total: Object.values(statusSummary).reduce((a, b) => a + b, 0),
+    });
+  } catch (error) {
+    console.error("Dashboard error:", error);
+    res
+      .status(500)
+      .json({ message: "Server error while fetching dashboard data" });
   }
-);
+});
 
 module.exports = router;

@@ -34,6 +34,8 @@ const connectDB = async () => {
 // Routes
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/appeals", require("./routes/appeals"));
+app.use("/api/admin", require("./routes/admin"));
+app.use("/api/reviewer", require("./routes/reviewer"));
 app.use("/api/users", require("./routes/users"));
 
 // Basic route for testing

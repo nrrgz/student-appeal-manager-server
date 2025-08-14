@@ -12,25 +12,109 @@ const appealSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    title: {
+
+    // Declaration & Deadline
+    declaration: {
+      type: Boolean,
+      required: true,
+      default: false,
+    },
+    deadlineCheck: {
+      type: Boolean,
+      required: true,
+      default: false,
+    },
+
+    // Personal Information
+    firstName: {
       type: String,
       required: true,
       trim: true,
     },
-    description: {
+    lastName: {
       type: String,
       required: true,
+      trim: true,
     },
-    grounds: {
+    studentId: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    email: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    phone: {
+      type: String,
+      trim: true,
+    },
+
+    // Adviser Information
+    hasAdviser: {
+      type: Boolean,
+      default: false,
+    },
+    adviserName: {
+      type: String,
+      trim: true,
+    },
+    adviserEmail: {
+      type: String,
+      trim: true,
+    },
+    adviserPhone: {
+      type: String,
+      trim: true,
+    },
+
+    // Appeal Details
+    appealType: {
       type: String,
       required: true,
       enum: [
-        "extenuating circumstances",
-        "procedural irregularity",
-        "academic judgment",
-        "other",
+        "Academic Judgment",
+        "Procedural Irregularity",
+        "Extenuating Circumstances",
+        "Assessment Irregularity",
+        "Other",
       ],
     },
+    grounds: [
+      {
+        type: String,
+        enum: [
+          "Illness or medical condition",
+          "Bereavement",
+          "Personal circumstances",
+          "Technical issues during assessment",
+          "Inadequate supervision",
+          "Unclear assessment criteria",
+          "Other",
+        ],
+      },
+    ],
+    statement: {
+      type: String,
+      required: true,
+    },
+
+    // Academic Context
+    moduleCode: {
+      type: String,
+      trim: true,
+    },
+    academicYear: {
+      type: String,
+      required: true,
+    },
+    semester: {
+      type: String,
+      enum: ["1", "2", "summer", "full year"],
+    },
+
+    // Status and Priority
     status: {
       type: String,
       enum: [
@@ -48,25 +132,8 @@ const appealSchema = new mongoose.Schema(
       enum: ["low", "medium", "high", "urgent"],
       default: "medium",
     },
-    moduleCode: {
-      type: String,
-      trim: true,
-    },
-    academicYear: {
-      type: String,
-      required: true,
-    },
-    semester: {
-      type: String,
-      enum: ["1", "2", "summer", "full year"],
-    },
-    submittedDate: {
-      type: Date,
-      default: Date.now,
-    },
-    deadline: {
-      type: Date,
-    },
+
+    // Assignment
     assignedReviewer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -75,17 +142,22 @@ const appealSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
-    documents: [
+
+    // Documents and Evidence
+    evidence: [
       {
         filename: String,
         originalName: String,
         path: String,
+        fileSize: Number,
         uploadedAt: {
           type: Date,
           default: Date.now,
         },
       },
     ],
+
+    // Timeline and Notes
     timeline: [
       {
         action: String,
@@ -100,18 +172,6 @@ const appealSchema = new mongoose.Schema(
         },
       },
     ],
-    decision: {
-      outcome: {
-        type: String,
-        enum: ["upheld", "partially upheld", "rejected", "withdrawn"],
-      },
-      reason: String,
-      decisionDate: Date,
-      decidedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-    },
     notes: [
       {
         content: String,
@@ -129,6 +189,36 @@ const appealSchema = new mongoose.Schema(
         },
       },
     ],
+
+    // Decision
+    decision: {
+      outcome: {
+        type: String,
+        enum: ["upheld", "partially upheld", "rejected", "withdrawn"],
+      },
+      reason: String,
+      decisionDate: Date,
+      decidedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    },
+
+    // Confirmation
+    confirmAll: {
+      type: Boolean,
+      required: true,
+      default: false,
+    },
+
+    // Timestamps
+    submittedDate: {
+      type: Date,
+      default: Date.now,
+    },
+    deadline: {
+      type: Date,
+    },
   },
   {
     timestamps: true,
@@ -151,5 +241,7 @@ appealSchema.pre("save", function (next) {
 appealSchema.index({ student: 1, status: 1 });
 appealSchema.index({ status: 1, priority: 1 });
 appealSchema.index({ appealId: 1 });
+appealSchema.index({ appealType: 1 });
+appealSchema.index({ submittedDate: 1 });
 
 module.exports = mongoose.model("Appeal", appealSchema);
