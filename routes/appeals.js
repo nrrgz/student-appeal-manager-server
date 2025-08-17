@@ -31,9 +31,12 @@ router.post(
 
     // Adviser Information
     body("hasAdviser").optional().isBoolean(),
-    body("adviserName").optional().trim(),
-    body("adviserEmail").optional().isEmail().normalizeEmail(),
-    body("adviserPhone").optional().trim(),
+    body("adviserName").optional({ checkFalsy: true }).trim(),
+    body("adviserEmail")
+      .optional({ checkFalsy: true })
+      .isEmail()
+      .normalizeEmail(),
+    body("adviserPhone").optional({ checkFalsy: true }).trim(),
 
     // Appeal Details
     body("appealType")
@@ -103,6 +106,29 @@ router.post(
         confirmAll,
       } = req.body;
 
+      // Debug: Log the received data
+      console.log("Received appeal data:", {
+        declaration,
+        deadlineCheck,
+        firstName,
+        lastName,
+        studentId,
+        email,
+        phone,
+        hasAdviser,
+        adviserName,
+        adviserEmail,
+        adviserPhone,
+        appealType,
+        grounds,
+        statement,
+        moduleCode,
+        academicYear,
+        semester,
+        confirmAll,
+      });
+      console.log("User from auth:", req.user);
+
       // Verify user has accepted all required confirmations
       if (!declaration || !deadlineCheck || !confirmAll) {
         return res.status(400).json({
@@ -118,6 +144,32 @@ router.post(
       }
 
       // Create new appeal
+      console.log("Creating appeal with data:", {
+        student: req.user._id,
+        declaration,
+        deadlineCheck,
+        firstName,
+        lastName,
+        studentId,
+        email,
+        phone,
+        hasAdviser,
+        adviserName: hasAdviser ? adviserName : undefined,
+        adviserEmail: hasAdviser ? adviserEmail : undefined,
+        adviserPhone: hasAdviser ? adviserPhone : undefined,
+        appealType,
+        grounds,
+        statement,
+        moduleCode,
+        academicYear,
+        semester,
+        confirmAll,
+      });
+
+      console.log("User object:", req.user);
+      console.log("User ID type:", typeof req.user._id);
+      console.log("User ID value:", req.user._id);
+
       const appeal = new Appeal({
         student: req.user._id,
         declaration,
@@ -137,9 +189,21 @@ router.post(
         moduleCode,
         academicYear,
         semester,
+        confirmAll,
       });
 
+      console.log("Appeal object created:", appeal);
+      console.log("About to save appeal...");
+      console.log("Appeal appealId before save:", appeal.appealId);
+
       await appeal.save();
+
+      console.log("Appeal saved successfully");
+      console.log("Appeal appealId after save:", appeal.appealId);
+      console.log(
+        "Full appeal object after save:",
+        JSON.stringify(appeal, null, 2)
+      );
 
       // Add to timeline
       appeal.timeline.push({
@@ -159,7 +223,15 @@ router.post(
       });
     } catch (error) {
       console.error("Appeal creation error:", error);
-      res.status(500).json({ message: "Server error during appeal creation" });
+      console.error("Error details:", {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      });
+      res.status(500).json({
+        message: "Server error during appeal creation",
+        error: error.message,
+      });
     }
   }
 );

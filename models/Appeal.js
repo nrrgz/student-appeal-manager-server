@@ -1,10 +1,11 @@
 const mongoose = require("mongoose");
-
+const { customAlphabet } = require("nanoid");
+const nano = customAlphabet("0123456789", 6); // Generate 6-digit numbers
 const appealSchema = new mongoose.Schema(
   {
     appealId: {
       type: String,
-      required: true,
+      required: false, // Will be generated in pre-save hook
       unique: true,
     },
     student: {
@@ -225,22 +226,56 @@ const appealSchema = new mongoose.Schema(
   }
 );
 
-// Generate appeal ID before saving
-appealSchema.pre("save", function (next) {
-  if (!this.appealId) {
+appealSchema.pre("save", async function (next) {
+  // Only generate appealId if it doesn't exist
+  if (this.appealId) return next();
+
+  try {
+    console.log("Generating appeal ID...");
     const year = new Date().getFullYear();
-    const count = Math.floor(Math.random() * 1000)
-      .toString()
-      .padStart(3, "0");
-    this.appealId = `APL-${year}-${count}`;
+
+    // Try to generate a unique appeal ID
+    for (let i = 0; i < 5; i++) {
+      const n = nano(); // e.g., "493027"
+      const candidate = `APL-${year}-${n}`;
+      console.log(`Trying appeal ID: ${candidate}`);
+
+      const exists = await this.constructor.exists({ appealId: candidate });
+      if (!exists) {
+        this.appealId = candidate;
+        console.log(`Generated appeal ID: ${this.appealId}`);
+        return next();
+      }
+    }
+
+    // Fallback: use timestamp-based ID
+    const timestamp = Date.now().toString().slice(-6);
+    this.appealId = `APL-${year}-${timestamp}`;
+    console.log(`Fallback appeal ID: ${this.appealId}`);
+
+    // Ensure appealId is set before proceeding
+    if (!this.appealId) {
+      throw new Error("Failed to generate appeal ID");
+    }
+
+    next();
+  } catch (err) {
+    console.error("Error in appeal pre-save hook:", err);
+    // Don't proceed if we can't generate an appeal ID
+    next(new Error(`Failed to generate appeal ID: ${err.message}`));
   }
-  next();
+});
+
+// Post-save validation to ensure appealId was generated
+appealSchema.post("save", function (doc) {
+  if (!doc.appealId) {
+    console.error("Warning: Appeal saved without appealId:", doc._id);
+  }
 });
 
 // Index for better query performance
 appealSchema.index({ student: 1, status: 1 });
 appealSchema.index({ status: 1, priority: 1 });
-appealSchema.index({ appealId: 1 });
 appealSchema.index({ appealType: 1 });
 appealSchema.index({ submittedDate: 1 });
 
