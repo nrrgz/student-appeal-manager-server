@@ -54,6 +54,91 @@ router.get("/appeals", async (req, res) => {
   }
 });
 
+// @route   GET /api/admin/appeals/dashboard
+// @desc    Get admin appeal statistics for dashboard
+// @access  Private (Admin)
+router.get("/appeals/dashboard", async (req, res) => {
+  try {
+    console.log("Starting dashboard data fetch...");
+
+    // Test if Appeal model is working
+    const totalAppeals = await Appeal.countDocuments();
+    console.log("Total appeals in database:", totalAppeals);
+
+    // Get appeals by status
+    const statusCounts = await Appeal.aggregate([
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    console.log("Status counts:", statusCounts);
+
+    // Get appeals by type
+    const typeCounts = await Appeal.aggregate([
+      {
+        $group: {
+          _id: "$appealType",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    console.log("Type counts:", typeCounts);
+
+    // Get appeals by department
+    const departmentCounts = await Appeal.aggregate([
+      {
+        $group: {
+          _id: "$department",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    console.log("Department counts:", departmentCounts);
+
+    // Get recent appeals
+    const recentAppeals = await Appeal.find()
+      .populate("student", "firstName lastName email studentId department")
+      .sort({ createdAt: -1 })
+      .limit(10);
+    console.log("Recent appeals count:", recentAppeals.length);
+
+    // Format status counts
+    const statusSummary = {
+      submitted: 0,
+      "under review": 0,
+      "awaiting information": 0,
+      "decision made": 0,
+      resolved: 0,
+      rejected: 0,
+    };
+
+    statusCounts.forEach((item) => {
+      statusSummary[item._id] = item.count;
+    });
+
+    res.json({
+      statusSummary,
+      typeCounts,
+      departmentCounts,
+      recentAppeals,
+      total: Object.values(statusSummary).reduce((a, b) => a + b, 0),
+    });
+  } catch (error) {
+    console.error("Dashboard error:", error);
+    console.error("Error details:", {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    });
+    res
+      .status(500)
+      .json({ message: "Server error while fetching dashboard data" });
+  }
+});
+
 // @route   GET /api/admin/appeals/:id
 // @desc    Get specific appeal by ID (admin view)
 // @access  Private (Admin)
@@ -147,86 +232,257 @@ router.put(
   }
 );
 
-// @route   GET /api/admin/appeals/dashboard
-// @desc    Get admin appeal statistics for dashboard
+// @route   PUT /api/admin/appeals/:id/status
+// @desc    Update appeal status (admin override)
 // @access  Private (Admin)
-router.get("/appeals/dashboard", async (req, res) => {
-  try {
-    // Get appeals by status
-    const statusCounts = await Appeal.aggregate([
-      {
-        $group: {
-          _id: "$status",
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+router.put(
+  "/appeals/:id/status",
+  [
+    body("status")
+      .isIn([
+        "submitted",
+        "under review",
+        "awaiting information",
+        "decision made",
+        "resolved",
+        "rejected",
+      ])
+      .withMessage("Valid status is required"),
+    body("reason").optional().trim(),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
 
-    // Get appeals by type
-    const typeCounts = await Appeal.aggregate([
-      {
-        $group: {
-          _id: "$appealType",
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+      const appeal = await Appeal.findById(req.params.id);
+      if (!appeal) {
+        return res.status(404).json({ message: "Appeal not found" });
+      }
 
-    // Get appeals by department
-    const departmentCounts = await Appeal.aggregate([
-      {
-        $lookup: {
-          from: "users",
-          localField: "student",
-          foreignField: "_id",
-          as: "studentInfo",
-        },
-      },
-      {
-        $unwind: "$studentInfo",
-      },
-      {
-        $group: {
-          _id: "$studentInfo.department",
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+      const { status, reason } = req.body;
+      const oldStatus = appeal.status;
 
-    // Get recent appeals
-    const recentAppeals = await Appeal.find()
-      .populate("student", "firstName lastName email studentId department")
-      .sort({ createdAt: -1 })
-      .limit(10);
+      appeal.status = status;
 
-    // Format status counts
-    const statusSummary = {
-      submitted: 0,
-      "under review": 0,
-      "awaiting information": 0,
-      "decision made": 0,
-      resolved: 0,
-      rejected: 0,
-    };
+      // Add to timeline
+      appeal.timeline.push({
+        action: "Status updated",
+        description: `Status changed from ${oldStatus} to ${status} by admin: ${
+          req.user.firstName
+        } ${req.user.lastName}${reason ? ` - Reason: ${reason}` : ""}`,
+        performedBy: req.user._id,
+      });
 
-    statusCounts.forEach((item) => {
-      statusSummary[item._id] = item.count;
-    });
+      await appeal.save();
 
-    res.json({
-      statusSummary,
-      typeCounts,
-      departmentCounts,
-      recentAppeals,
-      total: Object.values(statusSummary).reduce((a, b) => a + b, 0),
-    });
-  } catch (error) {
-    console.error("Dashboard error:", error);
-    res
-      .status(500)
-      .json({ message: "Server error while fetching dashboard data" });
+      await appeal.populate("student", "firstName lastName email studentId");
+      await appeal.populate("assignedReviewer", "firstName lastName");
+      await appeal.populate("assignedAdmin", "firstName lastName");
+
+      res.json({
+        message: "Appeal status updated successfully",
+        appeal,
+      });
+    } catch (error) {
+      console.error("Status update error:", error);
+      res.status(500).json({ message: "Server error during status update" });
+    }
   }
-});
+);
+
+// @route   PUT /api/admin/appeals/:id/priority
+// @desc    Update appeal priority
+// @access  Private (Admin)
+router.put(
+  "/appeals/:id/priority",
+  [
+    body("priority")
+      .isIn(["low", "medium", "high", "urgent"])
+      .withMessage("Valid priority is required"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const appeal = await Appeal.findById(req.params.id);
+      if (!appeal) {
+        return res.status(404).json({ message: "Appeal not found" });
+      }
+
+      const { priority } = req.body;
+      const oldPriority = appeal.priority;
+
+      appeal.priority = priority;
+
+      // Add to timeline
+      appeal.timeline.push({
+        action: "Priority updated",
+        description: `Priority changed from ${oldPriority} to ${priority} by admin: ${req.user.firstName} ${req.user.lastName}`,
+        performedBy: req.user._id,
+      });
+
+      await appeal.save();
+
+      await appeal.populate("student", "firstName lastName email studentId");
+      await appeal.populate("assignedReviewer", "firstName lastName");
+      await appeal.populate("assignedAdmin", "firstName lastName");
+
+      res.json({
+        message: "Appeal priority updated successfully",
+        appeal,
+      });
+    } catch (error) {
+      console.error("Priority update error:", error);
+      res.status(500).json({ message: "Server error during priority update" });
+    }
+  }
+);
+
+// @route   POST /api/admin/appeals/:id/notes
+// @desc    Add internal note to appeal (admin only)
+// @access  Private (Admin)
+router.post(
+  "/appeals/:id/notes",
+  [
+    body("content").trim().notEmpty().withMessage("Note content is required"),
+    body("isInternal").optional().isBoolean(),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const appeal = await Appeal.findById(req.params.id);
+      if (!appeal) {
+        return res.status(404).json({ message: "Appeal not found" });
+      }
+
+      const { content, isInternal = true } = req.body;
+
+      const note = {
+        content,
+        author: req.user._id,
+        isInternal,
+      };
+
+      appeal.notes.push(note);
+
+      // Add to timeline
+      appeal.timeline.push({
+        action: "Internal note added",
+        description: `Note added by admin: ${req.user.firstName} ${req.user.lastName}`,
+        performedBy: req.user._id,
+      });
+
+      await appeal.save();
+
+      await appeal.populate("notes.author", "firstName lastName role");
+
+      res.json({
+        message: "Note added successfully",
+        note: appeal.notes[appeal.notes.length - 1],
+      });
+    } catch (error) {
+      console.error("Add note error:", error);
+      res.status(500).json({ message: "Server error while adding note" });
+    }
+  }
+);
+
+// @route   POST /api/admin/appeals/bulk-assign
+// @desc    Bulk assign appeals to reviewers/admins
+// @access  Private (Admin)
+router.post(
+  "/appeals/bulk-assign",
+  [
+    body("appealIds")
+      .isArray({ min: 1 })
+      .withMessage("At least one appeal ID is required"),
+    body("appealIds.*").isMongoId().withMessage("Invalid appeal ID"),
+    body("assignedReviewer").optional().isMongoId(),
+    body("assignedAdmin").optional().isMongoId(),
+    body("priority").optional().isIn(["low", "medium", "high", "urgent"]),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { appealIds, assignedReviewer, assignedAdmin, priority } = req.body;
+
+      const results = [];
+      const failures = [];
+
+      for (const appealId of appealIds) {
+        try {
+          const appeal = await Appeal.findById(appealId);
+          if (!appeal) {
+            failures.push({ appealId, error: "Appeal not found" });
+            continue;
+          }
+
+          const updates = {};
+          if (assignedReviewer) updates.assignedReviewer = assignedReviewer;
+          if (assignedAdmin) updates.assignedAdmin = assignedAdmin;
+          if (priority) updates.priority = priority;
+
+          // Add to timeline
+          const timelineEntry = {
+            action: "Bulk assignment",
+            description: `Bulk assignment by admin: ${req.user.firstName} ${req.user.lastName}`,
+            performedBy: req.user._id,
+          };
+
+          if (assignedReviewer) {
+            timelineEntry.description += ` - Reviewer assigned`;
+          }
+          if (assignedAdmin) {
+            timelineEntry.description += ` - Admin assigned`;
+          }
+          if (priority) {
+            timelineEntry.description += ` - Priority set to ${priority}`;
+          }
+
+          updates.timeline = [...appeal.timeline, timelineEntry];
+
+          const updatedAppeal = await Appeal.findByIdAndUpdate(
+            appealId,
+            updates,
+            { new: true, runValidators: true }
+          );
+
+          results.push({ appealId, success: true, appeal: updatedAppeal });
+        } catch (error) {
+          failures.push({ appealId, error: error.message });
+        }
+      }
+
+      res.json({
+        message: "Bulk assignment completed",
+        results,
+        errors: failures,
+        summary: {
+          total: appealIds.length,
+          successful: results.length,
+          failed: failures.length,
+        },
+      });
+    } catch (error) {
+      console.error("Bulk assignment error:", error);
+      res.status(500).json({ message: "Server error during bulk assignment" });
+    }
+  }
+);
 
 // @route   GET /api/admin/appeals/search
 // @desc    Search appeals with filters (admin view)
@@ -282,6 +538,80 @@ router.get("/appeals/search", async (req, res) => {
   } catch (error) {
     console.error("Search error:", error);
     res.status(500).json({ message: "Server error while searching appeals" });
+  }
+});
+
+// @route   GET /api/admin/reports/appeals
+// @desc    Get appeal reports for admin
+// @access  Private (Admin)
+router.get("/reports/appeals", async (req, res) => {
+  try {
+    const { startDate, endDate, department, appealType } = req.query;
+
+    let query = {};
+
+    // Date range filter
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
+
+    // Department filter
+    if (department) {
+      const students = await User.find({ role: "student", department });
+      const studentIds = students.map((student) => student._id);
+      query.student = { $in: studentIds };
+    }
+
+    // Appeal type filter
+    if (appealType) query.appealType = appealType;
+
+    // Get appeals with populated student info
+    const appeals = await Appeal.find(query)
+      .populate("student", "firstName lastName email studentId department")
+      .populate("assignedReviewer", "firstName lastName")
+      .populate("assignedAdmin", "firstName lastName")
+      .sort({ createdAt: -1 });
+
+    // Generate report data
+    const reportData = {
+      total: appeals.length,
+      byStatus: {},
+      byType: {},
+      byDepartment: {},
+      byMonth: {},
+      averageProcessingTime: 0,
+    };
+
+    appeals.forEach((appeal) => {
+      // Status counts
+      reportData.byStatus[appeal.status] =
+        (reportData.byStatus[appeal.status] || 0) + 1;
+
+      // Type counts
+      reportData.byType[appeal.appealType] =
+        (reportData.byType[appeal.appealType] || 0) + 1;
+
+      // Department counts
+      if (appeal.student && appeal.student.department) {
+        reportData.byDepartment[appeal.student.department] =
+          (reportData.byDepartment[appeal.student.department] || 0) + 1;
+      }
+
+      // Monthly counts
+      const month = appeal.createdAt.toISOString().slice(0, 7); // YYYY-MM format
+      reportData.byMonth[month] = (reportData.byMonth[month] || 0) + 1;
+    });
+
+    res.json({
+      reportData,
+      appeals,
+      filters: { startDate, endDate, department, appealType },
+    });
+  } catch (error) {
+    console.error("Reports error:", error);
+    res.status(500).json({ message: "Server error while generating reports" });
   }
 });
 
