@@ -28,6 +28,10 @@ router.post(
       .normalizeEmail()
       .withMessage("Valid email is required"),
     body("phone").optional().trim(),
+    body("department")
+      .trim()
+      .notEmpty()
+      .withMessage("Department selection is required"),
 
     // Adviser Information
     body("hasAdviser").optional().isBoolean(),
@@ -67,6 +71,12 @@ router.post(
       .notEmpty()
       .withMessage("Appeal statement is required"),
 
+    // Evidence (optional)
+    body("evidence")
+      .optional()
+      .isArray()
+      .withMessage("Evidence must be an array"),
+
     // Academic Context
     body("moduleCode").optional().trim(),
     body("academicYear").notEmpty().withMessage("Academic year is required"),
@@ -93,6 +103,7 @@ router.post(
         studentId,
         email,
         phone,
+        department,
         hasAdviser,
         adviserName,
         adviserEmail,
@@ -100,6 +111,7 @@ router.post(
         appealType,
         grounds,
         statement,
+        evidence,
         moduleCode,
         academicYear,
         semester,
@@ -115,6 +127,7 @@ router.post(
         studentId,
         email,
         phone,
+        department,
         hasAdviser,
         adviserName,
         adviserEmail,
@@ -122,11 +135,18 @@ router.post(
         appealType,
         grounds,
         statement,
+        evidence,
         moduleCode,
         academicYear,
         semester,
         confirmAll,
       });
+      console.log("Evidence data received:", evidence);
+      console.log("Evidence type:", typeof evidence);
+      console.log("Evidence length:", evidence ? evidence.length : "undefined");
+      console.log("Evidence isArray:", Array.isArray(evidence));
+      console.log("Evidence === null:", evidence === null);
+      console.log("Evidence === undefined:", evidence === undefined);
       console.log("User from auth:", req.user);
 
       // Verify user has accepted all required confirmations
@@ -160,11 +180,15 @@ router.post(
         appealType,
         grounds,
         statement,
+        evidence: Array.isArray(evidence) ? evidence : [],
         moduleCode,
         academicYear,
         semester,
         confirmAll,
       });
+      console.log("Evidence field being set:", evidence || []);
+      console.log("Evidence field type:", typeof (evidence || []));
+      console.log("Evidence field isArray:", Array.isArray(evidence || []));
 
       console.log("User object:", req.user);
       console.log("User ID type:", typeof req.user._id);
@@ -179,6 +203,7 @@ router.post(
         studentId,
         email,
         phone,
+        department,
         hasAdviser,
         adviserName: hasAdviser ? adviserName : undefined,
         adviserEmail: hasAdviser ? adviserEmail : undefined,
@@ -186,13 +211,30 @@ router.post(
         appealType,
         grounds,
         statement,
+        evidence: Array.isArray(evidence) ? evidence : [],
         moduleCode,
         academicYear,
         semester,
         confirmAll,
       });
 
+      // Ensure evidence is always an array in the appeal object
+      if (!Array.isArray(appeal.evidence)) {
+        appeal.evidence = [];
+      }
+
+      console.log("Appeal object created with evidence:", appeal.evidence);
+      console.log(
+        "Evidence field type in appeal object:",
+        typeof appeal.evidence
+      );
+      console.log(
+        "Evidence field isArray in appeal object:",
+        Array.isArray(appeal.evidence)
+      );
+
       console.log("Appeal object created:", appeal);
+      console.log("Evidence in appeal object:", appeal.evidence);
       console.log("About to save appeal...");
       console.log("Appeal appealId before save:", appeal.appealId);
 
@@ -200,6 +242,12 @@ router.post(
 
       console.log("Appeal saved successfully");
       console.log("Appeal appealId after save:", appeal.appealId);
+      console.log("Appeal evidence after save:", appeal.evidence);
+      console.log("Evidence field type after save:", typeof appeal.evidence);
+      console.log(
+        "Evidence field isArray after save:",
+        Array.isArray(appeal.evidence)
+      );
       console.log(
         "Full appeal object after save:",
         JSON.stringify(appeal, null, 2)
@@ -214,8 +262,38 @@ router.post(
 
       await appeal.save();
 
+      console.log(
+        "Evidence field after second save (timeline):",
+        appeal.evidence
+      );
+      console.log(
+        "Evidence field type after second save:",
+        typeof appeal.evidence
+      );
+      console.log(
+        "Evidence field isArray after second save:",
+        Array.isArray(appeal.evidence)
+      );
+
       // Populate student info for response
       await appeal.populate("student", "firstName lastName email studentId");
+
+      console.log("Evidence field after populate:", appeal.evidence);
+      console.log(
+        "Evidence field type after populate:",
+        typeof appeal.evidence
+      );
+      console.log(
+        "Evidence field isArray after populate:",
+        Array.isArray(appeal.evidence)
+      );
+
+      console.log("Sending response with appeal evidence:", appeal.evidence);
+      console.log("Response appeal evidence type:", typeof appeal.evidence);
+      console.log(
+        "Response appeal evidence isArray:",
+        Array.isArray(appeal.evidence)
+      );
 
       res.status(201).json({
         message: "Appeal submitted successfully",
@@ -269,9 +347,48 @@ router.get("/:id", auth, requireStudent, async (req, res) => {
       .populate("timeline.performedBy", "firstName lastName role")
       .populate("notes.author", "firstName lastName role");
 
+    // Ensure evidence is always an array
+    if (!Array.isArray(appeal.evidence)) {
+      appeal.evidence = [];
+    }
+
+    console.log("Appeal after populate operations:", {
+      id: appeal._id,
+      evidence: appeal.evidence,
+      evidenceType: typeof appeal.evidence,
+      evidenceIsArray: Array.isArray(appeal.evidence),
+      evidenceLength: appeal.evidence ? appeal.evidence.length : 0,
+    });
+
     if (!appeal) {
       return res.status(404).json({ message: "Appeal not found" });
     }
+
+    console.log("Appeal retrieved from database:", {
+      id: appeal._id,
+      evidence: appeal.evidence,
+      evidenceType: typeof appeal.evidence,
+      evidenceIsArray: Array.isArray(appeal.evidence),
+      evidenceLength: appeal.evidence ? appeal.evidence.length : 0,
+    });
+
+    console.log("Sending appeal to student:", {
+      id: appeal._id,
+      evidence: appeal.evidence,
+      evidenceLength: appeal.evidence ? appeal.evidence.length : 0,
+    });
+
+    // Ensure evidence is always an array in response
+    if (!Array.isArray(appeal.evidence)) {
+      appeal.evidence = [];
+    }
+
+    console.log("Response appeal evidence:", appeal.evidence);
+    console.log("Response appeal evidence type:", typeof appeal.evidence);
+    console.log(
+      "Response appeal evidence isArray:",
+      Array.isArray(appeal.evidence)
+    );
 
     res.json({ appeal });
   } catch (error) {

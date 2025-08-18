@@ -51,6 +51,11 @@ const appealSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    department: {
+      type: String,
+      required: true,
+      trim: true,
+    },
 
     // Adviser Information
     hasAdviser: {

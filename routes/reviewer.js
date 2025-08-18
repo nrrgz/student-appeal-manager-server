@@ -59,14 +59,34 @@ router.get("/appeals/:id", async (req, res) => {
   try {
     const appeal = await Appeal.findById(req.params.id)
       .populate("student", "firstName lastName email studentId")
-      .populate("assignedReviewer", "firstName lastName")
       .populate("assignedAdmin", "firstName lastName")
       .populate("timeline.performedBy", "firstName lastName role")
       .populate("notes.author", "firstName lastName role");
 
+    // Ensure evidence is always an array
+    if (!Array.isArray(appeal.evidence)) {
+      appeal.evidence = [];
+    }
+
+    console.log("Appeal after populate operations (reviewer):", {
+      id: appeal._id,
+      evidence: appeal.evidence,
+      evidenceType: typeof appeal.evidence,
+      evidenceIsArray: Array.isArray(appeal.evidence),
+      evidenceLength: appeal.evidence ? appeal.evidence.length : 0,
+    });
+
     if (!appeal) {
       return res.status(404).json({ message: "Appeal not found" });
     }
+
+    console.log("Appeal retrieved from database (reviewer):", {
+      id: appeal._id,
+      evidence: appeal.evidence,
+      evidenceType: typeof appeal.evidence,
+      evidenceIsArray: Array.isArray(appeal.evidence),
+      evidenceLength: appeal.evidence ? appeal.evidence.length : 0,
+    });
 
     // Check if reviewer is assigned to this appeal or if it's unassigned
     if (
@@ -77,6 +97,27 @@ router.get("/appeals/:id", async (req, res) => {
         .status(403)
         .json({ message: "You are not assigned to review this appeal" });
     }
+
+    console.log("Sending appeal to reviewer:", {
+      id: appeal._id,
+      evidence: appeal.evidence,
+      evidenceLength: appeal.evidence ? appeal.evidence.length : 0,
+    });
+
+    // Ensure evidence is always an array in response
+    if (!Array.isArray(appeal.evidence)) {
+      appeal.evidence = [];
+    }
+
+    console.log("Response appeal evidence (reviewer):", appeal.evidence);
+    console.log(
+      "Response appeal evidence type (reviewer):",
+      typeof appeal.evidence
+    );
+    console.log(
+      "Response appeal evidence isArray (reviewer):",
+      Array.isArray(appeal.evidence)
+    );
 
     res.json({ appeal });
   } catch (error) {
