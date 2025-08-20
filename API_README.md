@@ -674,6 +674,63 @@ GET /api/admin/reports/appeals
 }
 ```
 
+#### Get Comprehensive Reports
+
+```http
+GET /api/admin/reports/comprehensive
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query Parameters:**
+
+- `dateRange` (optional): Number of days (default: 30)
+- `department` (optional): Filter by department
+- `appealType` (optional): Filter by appeal type
+
+**Response:**
+
+```json
+{
+  "dateRange": 30,
+  "total": 156,
+  "statusSummary": {...},
+  "typeCounts": [...],
+  "departmentCounts": [...],
+  "groundsStats": [...],
+  "resolutionStats": {...},
+  "resolutionTimeDistribution": {...},
+  "monthlyTrends": [...],
+  "pendingAppeals": 23,
+  "resolvedAppeals": 98,
+  "rejectedAppeals": 35,
+  "successRate": 63,
+  "averageResolutionTime": 4.2
+}
+```
+
+#### Export Reports as CSV
+
+```http
+GET /api/admin/reports/export-csv
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query Parameters:**
+
+- `dateRange` (optional): Number of days (default: 30)
+- `department` (optional): Filter by department
+- `appealType` (optional): Filter by appeal type
+
+**Response:** CSV file download
+
+**CSV Columns:**
+
+- Appeal ID, Student Name, Student ID, Department, Email, Appeal Type, Grounds, Status, Priority, Submitted Date, Assigned Reviewer, Assigned Admin, Resolution Time (days)
+
+````
+
 ---
 
 ### 🔍 Reviewer Operations
@@ -682,7 +739,7 @@ GET /api/admin/reports/appeals
 
 ```http
 GET /api/reviewer/appeals
-```
+````
 
 **Headers:** `Authorization: Bearer <token>`
 

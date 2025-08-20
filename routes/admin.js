@@ -805,7 +805,7 @@ router.get("/reports/appeals", async (req, res) => {
       },
     ]);
 
-    // Get resolution time statistics
+    // Get resolution time statistics with more detailed breakdown
     const resolutionStats = await Appeal.aggregate([
       {
         $match: {
@@ -830,6 +830,42 @@ router.get("/reports/appeals", async (req, res) => {
           minResolutionTime: { $min: "$resolutionTime" },
           maxResolutionTime: { $max: "$resolutionTime" },
           totalResolved: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Get detailed resolution time distribution
+    const resolutionTimeDistribution = await Appeal.aggregate([
+      {
+        $match: {
+          ...matchStage,
+          status: { $in: ["resolved", "decision made"] },
+        },
+      },
+      {
+        $addFields: {
+          resolutionTime: {
+            $divide: [
+              { $subtract: ["$updatedAt", "$createdAt"] },
+              1000 * 60 * 60 * 24, // Convert to days
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $switch: {
+              branches: [
+                { case: { $lt: ["$resolutionTime", 2] }, then: "0-2 days" },
+                { case: { $lt: ["$resolutionTime", 5] }, then: "3-5 days" },
+                { case: { $lt: ["$resolutionTime", 10] }, then: "6-10 days" },
+                { case: { $gte: ["$resolutionTime", 10] }, then: "10+ days" },
+              ],
+              default: "Unknown",
+            },
+          },
+          count: { $sum: 1 },
         },
       },
     ]);
@@ -863,6 +899,26 @@ router.get("/reports/appeals", async (req, res) => {
       },
     ]);
 
+    // Get grounds statistics
+    const groundsStats = await Appeal.aggregate([
+      { $match: matchStage },
+      {
+        $unwind: "$grounds",
+      },
+      {
+        $group: {
+          _id: "$grounds",
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $sort: { count: -1 },
+      },
+      {
+        $limit: 10,
+      },
+    ]);
+
     // Format status counts
     const statusSummary = {
       submitted: 0,
@@ -884,23 +940,397 @@ router.get("/reports/appeals", async (req, res) => {
       resolved: item.resolved,
     }));
 
+    // Format resolution time distribution
+    const formattedResolutionTimes = {
+      "0-2 days": 0,
+      "3-5 days": 0,
+      "6-10 days": 0,
+      "10+ days": 0,
+    };
+
+    resolutionTimeDistribution.forEach((item) => {
+      if (formattedResolutionTimes.hasOwnProperty(item._id)) {
+        formattedResolutionTimes[item._id] = item.count;
+      }
+    });
+
+    // Calculate total appeals
+    const total = Object.values(statusSummary).reduce((a, b) => a + b, 0);
+
     res.json({
       dateRange: parseInt(dateRange),
       statusSummary,
       typeCounts,
       departmentCounts,
+      groundsStats,
       resolutionStats: resolutionStats[0] || {
         avgResolutionTime: 0,
         minResolutionTime: 0,
         maxResolutionTime: 0,
         totalResolved: 0,
       },
+      resolutionTimeDistribution: formattedResolutionTimes,
       monthlyTrends: formattedMonthlyTrends,
-      total: Object.values(statusSummary).reduce((a, b) => a + b, 0),
+      total,
+      // Additional calculated fields for frontend
+      pendingAppeals:
+        statusSummary.submitted +
+        statusSummary["under review"] +
+        statusSummary["awaiting information"],
+      resolvedAppeals: statusSummary["decision made"] + statusSummary.resolved,
+      rejectedAppeals: statusSummary.rejected,
     });
   } catch (error) {
     console.error("Reports error:", error);
     res.status(500).json({ message: "Server error while generating reports" });
+  }
+});
+
+// @route   GET /api/admin/reports/comprehensive
+// @desc    Get comprehensive reports for admin dashboard
+// @access  Private (Admin)
+router.get("/reports/comprehensive", async (req, res) => {
+  try {
+    const { dateRange = "30", department, appealType } = req.query;
+
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(dateRange));
+
+    let matchStage = {
+      createdAt: { $gte: startDate, $lte: endDate },
+    };
+
+    if (department) {
+      const students = await User.find({ role: "student", department });
+      const studentIds = students.map((student) => student._id);
+      matchStage.student = { $in: studentIds };
+    }
+
+    if (appealType) {
+      matchStage.appealType = appealType;
+    }
+
+    // Get all statistics in parallel for better performance
+    const [
+      statusCounts,
+      typeCounts,
+      departmentCounts,
+      resolutionStats,
+      resolutionTimeDistribution,
+      monthlyTrends,
+      groundsStats,
+      totalCount,
+    ] = await Promise.all([
+      // Status counts
+      Appeal.aggregate([
+        { $match: matchStage },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+
+      // Type counts
+      Appeal.aggregate([
+        { $match: matchStage },
+        { $group: { _id: "$appealType", count: { $sum: 1 } } },
+      ]),
+
+      // Department counts
+      Appeal.aggregate([
+        { $match: matchStage },
+        {
+          $lookup: {
+            from: "users",
+            localField: "student",
+            foreignField: "_id",
+            as: "studentInfo",
+          },
+        },
+        { $unwind: "$studentInfo" },
+        { $group: { _id: "$studentInfo.department", count: { $sum: 1 } } },
+      ]),
+
+      // Resolution stats
+      Appeal.aggregate([
+        {
+          $match: {
+            ...matchStage,
+            status: { $in: ["resolved", "decision made"] },
+          },
+        },
+        {
+          $addFields: {
+            resolutionTime: {
+              $divide: [
+                { $subtract: ["$updatedAt", "$createdAt"] },
+                1000 * 60 * 60 * 24,
+              ],
+            },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            avgResolutionTime: { $avg: "$resolutionTime" },
+            minResolutionTime: { $min: "$resolutionTime" },
+            maxResolutionTime: { $max: "$resolutionTime" },
+            totalResolved: { $sum: 1 },
+          },
+        },
+      ]),
+
+      // Resolution time distribution
+      Appeal.aggregate([
+        {
+          $match: {
+            ...matchStage,
+            status: { $in: ["resolved", "decision made"] },
+          },
+        },
+        {
+          $addFields: {
+            resolutionTime: {
+              $divide: [
+                { $subtract: ["$updatedAt", "$createdAt"] },
+                1000 * 60 * 60 * 24,
+              ],
+            },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $switch: {
+                branches: [
+                  { case: { $lt: ["$resolutionTime", 2] }, then: "0-2 days" },
+                  { case: { $lt: ["$resolutionTime", 5] }, then: "3-5 days" },
+                  { case: { $lt: ["$resolutionTime", 10] }, then: "6-10 days" },
+                  { case: { $gte: ["$resolutionTime", 10] }, then: "10+ days" },
+                ],
+                default: "Unknown",
+              },
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+
+      // Monthly trends
+      Appeal.aggregate([
+        { $match: matchStage },
+        {
+          $group: {
+            _id: {
+              year: { $year: "$createdAt" },
+              month: { $month: "$createdAt" },
+            },
+            appeals: { $sum: 1 },
+            resolved: {
+              $sum: {
+                $cond: [
+                  { $in: ["$status", ["resolved", "decision made"]] },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+        { $sort: { "_id.year": 1, "_id.month": 1 } },
+        { $limit: 12 },
+      ]),
+
+      // Grounds stats
+      Appeal.aggregate([
+        { $match: matchStage },
+        { $unwind: "$grounds" },
+        { $group: { _id: "$grounds", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 },
+      ]),
+
+      // Total count
+      Appeal.countDocuments(matchStage),
+    ]);
+
+    // Format status counts
+    const statusSummary = {
+      submitted: 0,
+      "under review": 0,
+      "awaiting information": 0,
+      "decision made": 0,
+      resolved: 0,
+      rejected: 0,
+    };
+
+    statusCounts.forEach((item) => {
+      statusSummary[item._id] = item.count;
+    });
+
+    // Format resolution time distribution
+    const formattedResolutionTimes = {
+      "0-2 days": 0,
+      "3-5 days": 0,
+      "6-10 days": 0,
+      "10+ days": 0,
+    };
+
+    resolutionTimeDistribution.forEach((item) => {
+      if (formattedResolutionTimes.hasOwnProperty(item._id)) {
+        formattedResolutionTimes[item._id] = item.count;
+      }
+    });
+
+    // Format monthly trends
+    const formattedMonthlyTrends = monthlyTrends.map((item) => ({
+      month: `${item._id.year}-${String(item._id.month).padStart(2, "0")}`,
+      appeals: item.appeals,
+      resolved: item.resolved,
+    }));
+
+    // Calculate derived statistics
+    const pendingAppeals =
+      statusSummary.submitted +
+      statusSummary["under review"] +
+      statusSummary["awaiting information"];
+    const resolvedAppeals =
+      statusSummary["decision made"] + statusSummary.resolved;
+    const rejectedAppeals = statusSummary.rejected;
+    const successRate =
+      totalCount > 0 ? Math.round((resolvedAppeals / totalCount) * 100) : 0;
+
+    res.json({
+      dateRange: parseInt(dateRange),
+      total: totalCount,
+      statusSummary,
+      typeCounts,
+      departmentCounts,
+      groundsStats,
+      resolutionStats: resolutionStats[0] || {
+        avgResolutionTime: 0,
+        minResolutionTime: 0,
+        maxResolutionTime: 0,
+        totalResolved: 0,
+      },
+      resolutionTimeDistribution: formattedResolutionTimes,
+      monthlyTrends: formattedMonthlyTrends,
+      // Calculated fields
+      pendingAppeals,
+      resolvedAppeals,
+      rejectedAppeals,
+      successRate,
+      averageResolutionTime:
+        Math.round((resolutionStats[0]?.avgResolutionTime || 0) * 10) / 10,
+    });
+  } catch (error) {
+    console.error("Comprehensive reports error:", error);
+    res
+      .status(500)
+      .json({ message: "Server error while generating comprehensive reports" });
+  }
+});
+
+// @route   GET /api/admin/reports/export-csv
+// @desc    Export reports data as CSV
+// @access  Private (Admin)
+router.get("/reports/export-csv", async (req, res) => {
+  try {
+    const { dateRange = "30", department, appealType } = req.query;
+
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(dateRange));
+
+    let matchStage = {
+      createdAt: { $gte: startDate, $lte: endDate },
+    };
+
+    if (department) {
+      const students = await User.find({ role: "student", department });
+      const studentIds = students.map((student) => student._id);
+      matchStage.student = { $in: studentIds };
+    }
+
+    if (appealType) {
+      matchStage.appealType = appealType;
+    }
+
+    // Get appeals with populated data
+    const appeals = await Appeal.find(matchStage)
+      .populate("student", "firstName lastName email studentId department")
+      .populate("assignedReviewer", "firstName lastName")
+      .populate("assignedAdmin", "firstName lastName")
+      .sort({ createdAt: -1 });
+
+    // Generate CSV content
+    const csvHeaders = [
+      "Appeal ID",
+      "Student Name",
+      "Student ID",
+      "Department",
+      "Email",
+      "Appeal Type",
+      "Grounds",
+      "Status",
+      "Priority",
+      "Submitted Date",
+      "Assigned Reviewer",
+      "Assigned Admin",
+      "Resolution Time (days)",
+    ];
+
+    const csvRows = appeals.map((appeal) => {
+      const resolutionTime =
+        appeal.status === "resolved" || appeal.status === "decision made"
+          ? Math.round(
+              (new Date(appeal.updatedAt) - new Date(appeal.createdAt)) /
+                (1000 * 60 * 60 * 24)
+            )
+          : "";
+
+      return [
+        appeal.appealId || appeal._id,
+        `${appeal.student?.firstName || appeal.firstName} ${
+          appeal.student?.lastName || appeal.lastName
+        }`,
+        appeal.student?.studentId || appeal.studentId,
+        appeal.student?.department || appeal.department,
+        appeal.student?.email || appeal.email,
+        appeal.appealType,
+        Array.isArray(appeal.grounds)
+          ? appeal.grounds.join("; ")
+          : appeal.grounds,
+        appeal.status,
+        appeal.priority || "",
+        new Date(appeal.createdAt).toLocaleDateString(),
+        appeal.assignedReviewer
+          ? `${appeal.assignedReviewer.firstName} ${appeal.assignedReviewer.lastName}`
+          : "",
+        appeal.assignedAdmin
+          ? `${appeal.assignedAdmin.firstName} ${appeal.assignedAdmin.lastName}`
+          : "",
+        resolutionTime,
+      ]
+        .map((field) => `"${field || ""}"`)
+        .join(",");
+    });
+
+    const csvContent = [csvHeaders.join(","), ...csvRows].join("\n");
+
+    // Set response headers for CSV download
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="appeal-reports-${
+        new Date().toISOString().split("T")[0]
+      }.csv"`
+    );
+
+    res.send(csvContent);
+  } catch (error) {
+    console.error("CSV export error:", error);
+    res.status(500).json({ message: "Server error while exporting CSV" });
   }
 });
 
