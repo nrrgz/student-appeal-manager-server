@@ -32,15 +32,56 @@ const connectDB = async () => {
 };
 
 // Routes
-app.use("/api/auth", require("./routes/auth"));
-app.use("/api/appeals", require("./routes/appeals"));
-app.use("/api/admin", require("./routes/admin"));
-app.use("/api/reviewer", require("./routes/reviewer"));
-app.use("/api/users", require("./routes/users"));
+console.log("Loading routes...");
+try {
+  app.use("/api/auth", require("./routes/auth"));
+  console.log("Auth routes loaded");
+} catch (error) {
+  console.error("Failed to load auth routes:", error.message);
+}
+
+try {
+  app.use("/api/appeals", require("./routes/appeals"));
+  console.log("Appeals routes loaded");
+} catch (error) {
+  console.error("Failed to load appeals routes:", error.message);
+}
+
+try {
+  app.use("/api/admin", require("./routes/admin"));
+  console.log("Admin routes loaded");
+} catch (error) {
+  console.error("Failed to load admin routes:", error.message);
+}
+
+try {
+  app.use("/api/reviewer", require("./routes/reviewer"));
+  console.log("Reviewer routes loaded");
+} catch (error) {
+  console.error("Failed to load reviewer routes:", error.message);
+}
+
+try {
+  app.use("/api/users", require("./routes/users"));
+  console.log("Users routes loaded");
+} catch (error) {
+  console.error("Failed to load users routes:", error.message);
+}
+
+console.log("All routes loaded successfully");
 
 // Basic route for testing
 app.get("/", (req, res) => {
   res.json({ message: "Student Appeal Manager API is running!" });
+});
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    message: "Server is running",
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Error handling middleware
@@ -70,4 +111,5 @@ const startServer = async () => {
   }
 };
 
+// Start the server
 startServer();

@@ -289,6 +289,23 @@ POST /api/appeals/:id/notes
 }
 ```
 
+#### Make Decision (Reviewer Only)
+
+```http
+PUT /api/appeals/:id/decision
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+
+```json
+{
+  "outcome": "upheld",
+  "reason": "The appeal has merit based on the evidence provided"
+}
+```
+
 #### Get Dashboard Statistics
 
 ```http
@@ -310,37 +327,14 @@ GET /api/appeals/dashboard
     "rejected": 1
   },
   "typeCounts": [
-    { "_id": "Extenuating Circumstances", "count": 12 }
+    {
+      "_id": "Extenuating Circumstances",
+      "count": 12
+    }
   ],
   "recentAppeals": [...],
   "total": 20
 }
-```
-
-#### Withdraw Appeal (Student Only)
-
-```http
-PUT /api/appeals/:id/withdraw
-```
-
-Headers: `Authorization: Bearer <token>`
-
-Request Body (optional):
-
-```json
-{ "reason": "I solved the issue with the module leader" }
-```
-
-#### Get Appeal Timeline (Student Only)
-
-```http
-GET /api/appeals/:id/timeline
-```
-
-#### Get Appeal Notes (Public Notes Only)
-
-```http
-GET /api/appeals/:id/notes
 ```
 
 ---
@@ -385,7 +379,12 @@ GET /api/admin/appeals
       "createdAt": "2024-01-15T10:30:00.000Z"
     }
   ],
-  "pagination": { "current": 1, "total": 5, "hasNext": false, "hasPrev": false }
+  "pagination": {
+    "current": 1,
+    "total": 5,
+    "hasNext": false,
+    "hasPrev": false
+  }
 }
 ```
 
@@ -415,67 +414,6 @@ PUT /api/admin/appeals/:id/assign
 }
 ```
 
-#### Update Appeal Status (Admin Override)
-
-```http
-PUT /api/admin/appeals/:id/status
-```
-
-Request Body:
-
-```json
-{ "status": "under review", "reason": "Reopened after additional evidence" }
-```
-
-#### Update Appeal Priority
-
-```http
-PUT /api/admin/appeals/:id/priority
-```
-
-Request Body:
-
-```json
-{ "priority": "urgent" }
-```
-
-#### Add Internal Note (Admin)
-
-```http
-POST /api/admin/appeals/:id/notes
-```
-
-Request Body:
-
-```json
-{ "content": "Escalated to Faculty", "isInternal": true }
-```
-
-#### Bulk Assign Appeals
-
-```http
-POST /api/admin/appeals/bulk-assign
-```
-
-Request Body:
-
-```json
-{
-  "appealIds": ["<id1>", "<id2>"],
-  "assignedReviewer": "<reviewerId>",
-  "assignedAdmin": "<adminId>",
-  "priority": "high"
-}
-```
-
-#### Appeal Reports
-
-```http
-GET /api/admin/reports/appeals
-```
-
-Query: `startDate`, `endDate`, `department`, `appealType`
-
 #### Get Admin Dashboard Statistics
 
 ```http
@@ -488,7 +426,14 @@ GET /api/admin/appeals/dashboard
 
 ```json
 {
-  "statusSummary": { "submitted": 5, "under review": 3, "awaiting information": 1, "decision made": 2, "resolved": 8, "rejected": 1 },
+  "statusSummary": {
+    "submitted": 5,
+    "under review": 3,
+    "awaiting information": 1,
+    "decision made": 2,
+    "resolved": 8,
+    "rejected": 1
+  },
   "typeCounts": [...],
   "departmentCounts": [...],
   "recentAppeals": [...],
@@ -504,7 +449,16 @@ GET /api/admin/appeals/search
 
 **Headers:** `Authorization: Bearer <token>`
 
-**Query Parameters:** `status`, `appealType`, `grounds`, `academicYear`, `semester`, `department`, `page`, `limit`
+**Query Parameters:**
+
+- `status`: Appeal status
+- `appealType`: Type of appeal
+- `grounds`: Ground for appeal
+- `academicYear`: Academic year
+- `semester`: Semester
+- `department`: Student department
+- `page`: Page number
+- `limit`: Items per page
 
 #### Get All Users
 
@@ -514,7 +468,12 @@ GET /api/admin/users
 
 **Headers:** `Authorization: Bearer <token>`
 
-**Query Parameters:** `role`, `department`, `page`, `limit`
+**Query Parameters:**
+
+- `role`: Filter by role
+- `department`: Filter by department
+- `page`: Page number
+- `limit`: Items per page
 
 #### Get Reviewers
 
@@ -559,6 +518,162 @@ DELETE /api/admin/users/:id
 
 **Headers:** `Authorization: Bearer <token>`
 
+#### Update Appeal Priority
+
+```http
+PUT /api/admin/appeals/:id/priority
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+
+```json
+{
+  "priority": "high"
+}
+```
+
+**Response:**
+
+```json
+{
+  "message": "Appeal priority updated successfully",
+  "appeal": {
+    "_id": "appeal_id",
+    "priority": "high",
+    "timeline": [...]
+  }
+}
+```
+
+#### Update Appeal Status
+
+```http
+PUT /api/admin/appeals/:id/status
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+
+```json
+{
+  "status": "under review",
+  "notes": "Optional admin note about status change"
+}
+```
+
+**Response:**
+
+```json
+{
+  "message": "Appeal status updated successfully",
+  "appeal": {
+    "_id": "appeal_id",
+    "status": "under review",
+    "timeline": [...],
+    "notes": [...]
+  }
+}
+```
+
+#### Add Admin Note
+
+```http
+POST /api/admin/appeals/:id/notes
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+
+```json
+{
+  "content": "Admin note content",
+  "isInternal": true
+}
+```
+
+**Response:**
+
+```json
+{
+  "message": "Admin note added successfully",
+  "appeal": {
+    "_id": "appeal_id",
+    "notes": [...]
+  }
+}
+```
+
+#### Bulk Assign Appeals
+
+```http
+POST /api/admin/appeals/bulk-assign
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+
+```json
+{
+  "appealIds": ["appeal_id_1", "appeal_id_2"],
+  "assignedReviewer": "reviewer_user_id",
+  "assignedAdmin": "admin_user_id",
+  "priority": "high"
+}
+```
+
+**Response:**
+
+```json
+{
+  "message": "Bulk assignment completed. 2 appeals updated.",
+  "results": [...],
+  "errors": []
+}
+```
+
+#### Get Appeal Reports
+
+```http
+GET /api/admin/reports/appeals
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query Parameters:**
+
+- `dateRange` (optional): Number of days (default: 30)
+- `department` (optional): Filter by department
+- `appealType` (optional): Filter by appeal type
+
+**Response:**
+
+```json
+{
+  "dateRange": 30,
+  "statusSummary": {
+    "submitted": 5,
+    "under review": 3,
+    "resolved": 8,
+    "rejected": 1
+  },
+  "typeCounts": [...],
+  "departmentCounts": [...],
+  "resolutionStats": {
+    "avgResolutionTime": 4.2,
+    "minResolutionTime": 1,
+    "maxResolutionTime": 15,
+    "totalResolved": 8
+  },
+  "monthlyTrends": [...],
+  "total": 17
+}
+```
+
 ---
 
 ### 🔍 Reviewer Operations
@@ -571,7 +686,12 @@ GET /api/reviewer/appeals
 
 **Headers:** `Authorization: Bearer <token>`
 
-**Query Parameters:** `page`, `limit`, `status`, `appealType`
+**Query Parameters:**
+
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 10)
+- `status` (optional): Filter by appeal status
+- `appealType` (optional): Filter by appeal type
 
 #### Get Appeal by ID (Reviewer View)
 
@@ -592,7 +712,10 @@ PUT /api/reviewer/appeals/:id/status
 **Request Body:**
 
 ```json
-{ "status": "under review", "notes": "Starting review process" }
+{
+  "status": "under review",
+  "notes": "Starting review process"
+}
 ```
 
 #### Add Internal Note
@@ -606,7 +729,10 @@ POST /api/reviewer/appeals/:id/notes
 **Request Body:**
 
 ```json
-{ "content": "Internal review note", "isInternal": true }
+{
+  "content": "Internal review note",
+  "isInternal": true
+}
 ```
 
 #### Make Decision
@@ -642,33 +768,6 @@ GET /api/reviewer/appeals/search
 
 **Headers:** `Authorization: Bearer <token>`
 
-#### Request Additional Information
-
-```http
-PUT /api/reviewer/appeals/:id/request-info
-```
-
-Request Body:
-
-```json
-{
-  "requestDetails": "Please submit medical certificate",
-  "deadline": "2025-01-31"
-}
-```
-
-#### Get Urgent Appeals
-
-```http
-GET /api/reviewer/appeals/urgent
-```
-
-#### Get Overdue Appeals
-
-```http
-GET /api/reviewer/appeals/overdue
-```
-
 ---
 
 ### 👥 Users
@@ -688,66 +787,6 @@ GET /api/users/:id/appeals
 ```
 
 **Headers:** `Authorization: Bearer <token>`
-
-#### Activate User (Admin)
-
-```http
-PUT /api/users/:id/activate
-```
-
-#### Reset User Password (Admin)
-
-```http
-PUT /api/users/:id/password
-```
-
-Request Body:
-
-```json
-{ "newPassword": "newStrongPassword" }
-```
-
-#### Get User Activity Summary
-
-```http
-GET /api/users/:id/activity
-```
-
-#### Search Users (Admin)
-
-```http
-GET /api/users/search
-```
-
-Query: `query`, `role`, `department`, `isActive`, `page`, `limit`
-
----
-
-### 🔐 Additional Authentication
-
-#### Change Password
-
-```http
-PUT /api/auth/change-password
-```
-
-Request Body:
-
-```json
-{ "currentPassword": "old", "newPassword": "newStrongPassword" }
-```
-
-#### Refresh Token
-
-```http
-POST /api/auth/refresh
-```
-
-#### Verify Token
-
-```http
-GET /api/auth/verify
-```
 
 ---
 
@@ -913,25 +952,33 @@ GET /api/auth/verify
 ### Authentication Error
 
 ```json
-{ "message": "Access denied. No token provided." }
+{
+  "message": "Access denied. No token provided."
+}
 ```
 
 ### Authorization Error
 
 ```json
-{ "message": "Access denied. Insufficient permissions." }
+{
+  "message": "Access denied. Insufficient permissions."
+}
 ```
 
 ### Not Found Error
 
 ```json
-{ "message": "Appeal not found" }
+{
+  "message": "Appeal not found"
+}
 ```
 
 ### Server Error
 
 ```json
-{ "message": "Server error during appeal creation" }
+{
+  "message": "Server error during appeal creation"
+}
 ```
 
 ---
