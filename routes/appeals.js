@@ -98,7 +98,7 @@ router.post(
       .custom((value) => {
         if (value === undefined || value === null) return true;
         if (value === "true" || value === true) return true;
-        if (value === "false" || value === false) return false;
+        if (value === "false" || value === false) return true; // Allow false values
         throw new Error("hasAdviser must be a boolean");
       }),
     body("adviserName").optional({ checkFalsy: true }).trim(),
@@ -531,6 +531,11 @@ router.get("/:id", auth, requireStudent, async (req, res) => {
       .populate("assignedAdmin", "firstName lastName")
       .populate("timeline.performedBy", "firstName lastName role")
       .populate("notes.author", "firstName lastName role");
+
+    // Filter out internal notes for students
+    if (appeal && appeal.notes) {
+      appeal.notes = appeal.notes.filter((note) => !note.isInternal);
+    }
 
     // Ensure evidence is always an array
     if (!Array.isArray(appeal.evidence)) {

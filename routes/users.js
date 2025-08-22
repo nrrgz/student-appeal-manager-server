@@ -10,6 +10,24 @@ const {
 
 const router = express.Router();
 
+// @route   GET /api/users/profile
+// @desc    Get current user profile
+// @access  Private
+router.get("/profile", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select("-password");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({ user });
+  } catch (error) {
+    console.error("Get profile error:", error);
+    res.status(500).json({ message: "Server error while fetching user" });
+  }
+});
+
 // @route   GET /api/users
 // @desc    Get all users (admin only)
 // @access  Private (Admin)

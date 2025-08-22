@@ -63,10 +63,7 @@ router.get("/appeals", async (req, res) => {
   try {
     const { page = 1, limit = 10, status, appealType } = req.query;
     let query = {
-      $or: [
-        { assignedReviewer: req.user._id },
-        { assignedReviewer: { $exists: false } },
-      ],
+      assignedReviewer: req.user._id,
     };
 
     // Apply filters
@@ -117,9 +114,9 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
       return res.status(404).json({ message: "Appeal not found" });
     }
 
-    // Check if reviewer is assigned to this appeal or if it's unassigned
+    // Check if reviewer is assigned to this appeal
     if (
-      appeal.assignedReviewer &&
+      !appeal.assignedReviewer ||
       appeal.assignedReviewer.toString() !== req.user._id.toString()
     ) {
       console.log("Reviewer not authorized for appeal:", id);
@@ -214,9 +211,9 @@ router.get("/appeals/:id", async (req, res) => {
       evidenceLength: appeal.evidence ? appeal.evidence.length : 0,
     });
 
-    // Check if reviewer is assigned to this appeal or if it's unassigned
+    // Check if reviewer is assigned to this appeal
     if (
-      appeal.assignedReviewer &&
+      !appeal.assignedReviewer ||
       appeal.assignedReviewer.toString() !== req.user._id.toString()
     ) {
       return res
@@ -283,7 +280,7 @@ router.put(
 
       // Check if reviewer is assigned to this appeal
       if (
-        appeal.assignedReviewer &&
+        !appeal.assignedReviewer ||
         appeal.assignedReviewer.toString() !== req.user._id.toString()
       ) {
         return res
@@ -417,7 +414,7 @@ router.put(
 
       // Check if reviewer is assigned to this appeal
       if (
-        appeal.assignedReviewer &&
+        !appeal.assignedReviewer ||
         appeal.assignedReviewer.toString() !== req.user._id.toString()
       ) {
         return res
@@ -483,7 +480,7 @@ router.post(
 
       // Check if reviewer is assigned to this appeal
       if (
-        appeal.assignedReviewer &&
+        !appeal.assignedReviewer ||
         appeal.assignedReviewer.toString() !== req.user._id.toString()
       ) {
         console.log("Reviewer not authorized for appeal:", id);
@@ -548,10 +545,7 @@ router.post(
 router.get("/appeals/dashboard", async (req, res) => {
   try {
     const query = {
-      $or: [
-        { assignedReviewer: req.user._id },
-        { assignedReviewer: { $exists: false } },
-      ],
+      assignedReviewer: req.user._id,
     };
 
     // Get appeals by status
@@ -626,10 +620,7 @@ router.get("/appeals/search", async (req, res) => {
     } = req.query;
 
     let query = {
-      $or: [
-        { assignedReviewer: req.user._id },
-        { assignedReviewer: { $exists: false } },
-      ],
+      assignedReviewer: req.user._id,
     };
 
     // Apply filters

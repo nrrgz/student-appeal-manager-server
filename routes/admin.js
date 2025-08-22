@@ -83,7 +83,15 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
 // @access  Private (Admin)
 router.get("/appeals", async (req, res) => {
   try {
-    const { page = 1, limit = 10, status, appealType, department } = req.query;
+    const {
+      page = 1,
+      limit = 10,
+      status,
+      appealType,
+      department,
+      assignedReviewer,
+      assignedAdmin,
+    } = req.query;
     let query = {};
 
     // Apply filters
@@ -94,6 +102,20 @@ router.get("/appeals", async (req, res) => {
       const students = await User.find({ role: "student", department });
       const studentIds = students.map((student) => student._id);
       query.student = { $in: studentIds };
+    }
+    if (assignedReviewer) {
+      if (assignedReviewer === "unassigned") {
+        query.assignedReviewer = { $exists: false };
+      } else {
+        query.assignedReviewer = assignedReviewer;
+      }
+    }
+    if (assignedAdmin) {
+      if (assignedAdmin === "unassigned") {
+        query.assignedAdmin = { $exists: false };
+      } else {
+        query.assignedAdmin = assignedAdmin;
+      }
     }
 
     const skip = (page - 1) * limit;
@@ -238,12 +260,45 @@ router.get("/appeals/dashboard", async (req, res) => {
       dueThisWeek: deadlineStats[0]?.dueThisWeek[0]?.count || 0,
     };
 
+    // Get assignment statistics
+    const assignmentStats = await Appeal.aggregate([
+      {
+        $facet: {
+          assignedToReviewer: [
+            { $match: { assignedReviewer: { $exists: true, $ne: null } } },
+            { $count: "count" },
+          ],
+          assignedToAdmin: [
+            { $match: { assignedAdmin: { $exists: true, $ne: null } } },
+            { $count: "count" },
+          ],
+          unassigned: [
+            {
+              $match: {
+                assignedReviewer: { $exists: false },
+                assignedAdmin: { $exists: false },
+              },
+            },
+            { $count: "count" },
+          ],
+        },
+      },
+    ]);
+
+    // Format assignment statistics
+    const assignmentSummary = {
+      assignedToReviewer: assignmentStats[0]?.assignedToReviewer[0]?.count || 0,
+      assignedToAdmin: assignmentStats[0]?.assignedToAdmin[0]?.count || 0,
+      unassigned: assignmentStats[0]?.unassigned[0]?.count || 0,
+    };
+
     res.json({
       statusSummary,
       typeCounts,
       departmentCounts,
       recentAppeals,
       deadlineSummary,
+      assignmentSummary,
       total: totalAppeals,
     });
   } catch (error) {
@@ -266,6 +321,8 @@ router.get("/appeals/search", async (req, res) => {
       academicYear,
       semester,
       department,
+      assignedReviewer,
+      assignedAdmin,
       page = 1,
       limit = 10,
     } = req.query;
@@ -282,6 +339,20 @@ router.get("/appeals/search", async (req, res) => {
       const students = await User.find({ role: "student", department });
       const studentIds = students.map((student) => student._id);
       query.student = { $in: studentIds };
+    }
+    if (assignedReviewer) {
+      if (assignedReviewer === "unassigned") {
+        query.assignedReviewer = { $exists: false };
+      } else {
+        query.assignedReviewer = assignedReviewer;
+      }
+    }
+    if (assignedAdmin) {
+      if (assignedAdmin === "unassigned") {
+        query.assignedAdmin = { $exists: false };
+      } else {
+        query.assignedAdmin = assignedAdmin;
+      }
     }
 
     const skip = (page - 1) * limit;
@@ -340,8 +411,24 @@ router.get("/appeals/:id", async (req, res) => {
 router.put(
   "/appeals/:id/assign",
   [
-    body("assignedReviewer").optional().isMongoId(),
-    body("assignedAdmin").optional().isMongoId(),
+    body("assignedReviewer")
+      .optional()
+      .custom((value) => {
+        if (value === null || value === undefined) return true;
+        if (typeof value === "string" && value.trim() === "") return true;
+        // Check if it's a valid MongoDB ObjectId
+        return /^[0-9a-fA-F]{24}$/.test(value);
+      })
+      .withMessage("assignedReviewer must be a valid MongoDB ObjectId or null"),
+    body("assignedAdmin")
+      .optional()
+      .custom((value) => {
+        if (value === null || value === undefined) return true;
+        if (typeof value === "string" && value.trim() === "") return true;
+        // Check if it's a valid MongoDB ObjectId
+        return /^[0-9a-fA-F]{24}$/.test(value);
+      })
+      .withMessage("assignedAdmin must be a valid MongoDB ObjectId or null"),
     body("priority").optional().isIn(["low", "medium", "high", "urgent"]),
   ],
   async (req, res) => {
@@ -359,9 +446,10 @@ router.put(
       const { assignedReviewer, assignedAdmin, priority } = req.body;
       const updates = {};
 
-      if (assignedReviewer) updates.assignedReviewer = assignedReviewer;
-      if (assignedAdmin) updates.assignedAdmin = assignedAdmin;
-      if (priority) updates.priority = priority;
+      if (assignedReviewer !== undefined)
+        updates.assignedReviewer = assignedReviewer;
+      if (assignedAdmin !== undefined) updates.assignedAdmin = assignedAdmin;
+      if (priority !== undefined) updates.priority = priority;
 
       // Add to timeline
       const timelineEntry = {
@@ -370,13 +458,21 @@ router.put(
         performedBy: req.user._id,
       };
 
-      if (assignedReviewer) {
-        timelineEntry.description += ` - Reviewer assigned`;
+      if (assignedReviewer !== undefined) {
+        if (assignedReviewer) {
+          timelineEntry.description += ` - Reviewer assigned`;
+        } else {
+          timelineEntry.description += ` - Reviewer unassigned`;
+        }
       }
-      if (assignedAdmin) {
-        timelineEntry.description += ` - Admin assigned`;
+      if (assignedAdmin !== undefined) {
+        if (assignedAdmin) {
+          timelineEntry.description += ` - Admin assigned`;
+        } else {
+          timelineEntry.description += ` - Admin unassigned`;
+        }
       }
-      if (priority) {
+      if (priority !== undefined) {
         timelineEntry.description += ` - Priority set to ${priority}`;
       }
 
@@ -768,6 +864,70 @@ router.post(
   }
 );
 
+// @route   DELETE /api/admin/appeals/:id/notes/:noteId
+// @desc    Delete admin note from appeal
+// @access  Private (Admin)
+router.delete("/appeals/:id/notes/:noteId", async (req, res) => {
+  try {
+    const { id, noteId } = req.params;
+
+    const appeal = await Appeal.findById(id);
+    if (!appeal) {
+      return res.status(404).json({ message: "Appeal not found" });
+    }
+
+    // Find the note to delete
+    const noteIndex = appeal.notes.findIndex(
+      (note) => note._id.toString() === noteId
+    );
+
+    if (noteIndex === -1) {
+      return res.status(404).json({ message: "Note not found" });
+    }
+
+    // Check if the note belongs to the current admin or if they have permission
+    const note = appeal.notes[noteIndex];
+    if (
+      note.author.toString() !== req.user._id.toString() &&
+      req.user.role !== "admin"
+    ) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to delete this note" });
+    }
+
+    // Remove the note
+    appeal.notes.splice(noteIndex, 1);
+
+    // Add to timeline
+    const timelineEntry = {
+      action: "Admin note deleted",
+      description: `Note deleted by admin: ${req.user.firstName} ${req.user.lastName}`,
+      performedBy: req.user._id,
+    };
+
+    appeal.timeline.push(timelineEntry);
+
+    // Save the updated appeal
+    await appeal.save();
+
+    // Populate and return the updated appeal
+    const updatedAppeal = await Appeal.findById(id)
+      .populate("student", "firstName lastName email studentId")
+      .populate("assignedReviewer", "firstName lastName")
+      .populate("assignedAdmin", "firstName lastName")
+      .populate("notes.author", "firstName lastName role");
+
+    res.json({
+      message: "Note deleted successfully",
+      appeal: updatedAppeal,
+    });
+  } catch (error) {
+    console.error("Delete note error:", error);
+    res.status(500).json({ message: "Server error while deleting note" });
+  }
+});
+
 // @route   POST /api/admin/appeals/bulk-assign
 // @desc    Bulk assign appeals to reviewers/admins
 // @access  Private (Admin)
@@ -778,8 +938,24 @@ router.post(
       .isArray({ min: 1 })
       .withMessage("At least one appeal ID is required"),
     body("appealIds.*").isMongoId().withMessage("Invalid appeal ID"),
-    body("assignedReviewer").optional().isMongoId(),
-    body("assignedAdmin").optional().isMongoId(),
+    body("assignedReviewer")
+      .optional()
+      .custom((value) => {
+        if (value === null || value === undefined) return true;
+        if (typeof value === "string" && value.trim() === "") return true;
+        // Check if it's a valid MongoDB ObjectId
+        return /^[0-9a-fA-F]{24}$/.test(value);
+      })
+      .withMessage("assignedReviewer must be a valid MongoDB ObjectId or null"),
+    body("assignedAdmin")
+      .optional()
+      .custom((value) => {
+        if (value === null || value === undefined) return true;
+        if (typeof value === "string" && value.trim() === "") return true;
+        // Check if it's a valid MongoDB ObjectId
+        return /^[0-9a-fA-F]{24}$/.test(value);
+      })
+      .withMessage("assignedAdmin must be a valid MongoDB ObjectId or null"),
     body("priority").optional().isIn(["low", "medium", "high", "urgent"]),
   ],
   async (req, res) => {
@@ -803,9 +979,11 @@ router.post(
           }
 
           const updates = {};
-          if (assignedReviewer) updates.assignedReviewer = assignedReviewer;
-          if (assignedAdmin) updates.assignedAdmin = assignedAdmin;
-          if (priority) updates.priority = priority;
+          if (assignedReviewer !== undefined)
+            updates.assignedReviewer = assignedReviewer;
+          if (assignedAdmin !== undefined)
+            updates.assignedAdmin = assignedAdmin;
+          if (priority !== undefined) updates.priority = priority;
 
           // Add to timeline
           const timelineEntry = {
@@ -814,13 +992,21 @@ router.post(
             performedBy: req.user._id,
           };
 
-          if (assignedReviewer) {
-            timelineEntry.description += ` - Reviewer assigned`;
+          if (assignedReviewer !== undefined) {
+            if (assignedReviewer) {
+              timelineEntry.description += ` - Reviewer assigned`;
+            } else {
+              timelineEntry.description += ` - Reviewer unassigned`;
+            }
           }
-          if (assignedAdmin) {
-            timelineEntry.description += ` - Admin assigned`;
+          if (assignedAdmin !== undefined) {
+            if (assignedAdmin) {
+              timelineEntry.description += ` - Admin assigned`;
+            } else {
+              timelineEntry.description += ` - Admin unassigned`;
+            }
           }
-          if (priority) {
+          if (priority !== undefined) {
             timelineEntry.description += ` - Priority set to ${priority}`;
           }
 
