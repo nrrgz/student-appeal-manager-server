@@ -3,11 +3,80 @@ const { body, validationResult } = require("express-validator");
 const Appeal = require("../models/Appeal");
 const User = require("../models/User");
 const { auth, requireAdmin } = require("../middleware/auth");
+const path = require("path");
+const fs = require("fs-extra");
 
 const router = express.Router();
 
 // All routes require admin role
 router.use(auth, requireAdmin);
+
+// @route   GET /api/admin/appeals/:id/evidence/:filename/download
+// @desc    Download evidence file for a specific appeal (admin access)
+// @access  Private (Admin)
+router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
+  try {
+    const { id, filename } = req.params;
+
+    console.log("Admin download request:", { id, filename });
+
+    // Find the appeal
+    const appeal = await Appeal.findById(id);
+
+    if (!appeal) {
+      console.log("Appeal not found for admin:", id);
+      return res.status(404).json({ message: "Appeal not found" });
+    }
+
+    console.log("Appeal found:", appeal._id);
+    console.log("Appeal evidence:", appeal.evidence);
+
+    // Find the evidence file
+    const evidenceFile = appeal.evidence.find(
+      (file) => file.filename === filename || file.originalName === filename
+    );
+
+    console.log("Evidence file found:", evidenceFile);
+
+    if (!evidenceFile) {
+      console.log("Evidence file not found for filename:", filename);
+      return res.status(404).json({ message: "Evidence file not found" });
+    }
+
+    // Construct the file path
+    const filePath = path.join(
+      __dirname,
+      "..",
+      "uploads",
+      evidenceFile.filename
+    );
+
+    // Check if file exists
+    if (!(await fs.pathExists(filePath))) {
+      console.log("File not found on server:", filePath);
+      return res.status(404).json({ message: "File not found on server" });
+    }
+
+    // Set response headers for file download
+    res.setHeader(
+      "Content-Type",
+      evidenceFile.mimeType || "application/octet-stream"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${
+        evidenceFile.originalName || evidenceFile.filename
+      }"`
+    );
+
+    // Stream the file
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+  } catch (error) {
+    console.error("Admin download evidence error:", error);
+    res.status(500).json({ message: "Server error while downloading file" });
+  }
+});
 
 // @route   GET /api/admin/appeals
 // @desc    Get all appeals (admin view)
@@ -106,6 +175,47 @@ router.get("/appeals/dashboard", async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(10);
 
+    // Get deadline statistics
+    const deadlineStats = await Appeal.aggregate([
+      {
+        $facet: {
+          totalWithDeadlines: [
+            { $match: { deadline: { $exists: true, $ne: null } } },
+            { $count: "count" },
+          ],
+          overdue: [
+            { $match: { deadline: { $lt: new Date() } } },
+            { $count: "count" },
+          ],
+          dueToday: [
+            {
+              $match: {
+                deadline: {
+                  $gte: new Date(new Date().setHours(0, 0, 0, 0)),
+                  $lt: new Date(new Date().setHours(23, 59, 59, 999)),
+                },
+              },
+            },
+            { $count: "count" },
+          ],
+          dueThisWeek: [
+            {
+              $match: {
+                deadline: {
+                  $gte: new Date(),
+                  $lte: new Date(new Date().setDate(new Date().getDate() + 7)),
+                },
+              },
+            },
+            { $count: "count" },
+          ],
+        },
+      },
+    ]);
+
+    // Get total count of appeals
+    const totalAppeals = await Appeal.countDocuments({});
+
     // Format status counts
     const statusSummary = {
       submitted: 0,
@@ -120,12 +230,21 @@ router.get("/appeals/dashboard", async (req, res) => {
       statusSummary[item._id] = item.count;
     });
 
+    // Format deadline statistics
+    const deadlineSummary = {
+      totalWithDeadlines: deadlineStats[0]?.totalWithDeadlines[0]?.count || 0,
+      overdue: deadlineStats[0]?.overdue[0]?.count || 0,
+      dueToday: deadlineStats[0]?.dueToday[0]?.count || 0,
+      dueThisWeek: deadlineStats[0]?.dueThisWeek[0]?.count || 0,
+    };
+
     res.json({
       statusSummary,
       typeCounts,
       departmentCounts,
       recentAppeals,
-      total: Object.values(statusSummary).reduce((a, b) => a + b, 0),
+      deadlineSummary,
+      total: totalAppeals,
     });
   } catch (error) {
     console.error("Dashboard error:", error);
@@ -1331,6 +1450,316 @@ router.get("/reports/export-csv", async (req, res) => {
   } catch (error) {
     console.error("CSV export error:", error);
     res.status(500).json({ message: "Server error while exporting CSV" });
+  }
+});
+
+// @route   PUT /api/admin/appeals/:id/deadline
+// @desc    Set or update deadline for an appeal
+// @access  Private (Admin)
+router.put("/appeals/:id/deadline", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { deadline, reason } = req.body;
+
+    // Validate deadline
+    if (!deadline) {
+      return res.status(400).json({ message: "Deadline is required" });
+    }
+
+    // Validate deadline format and ensure it's in the future
+    const deadlineDate = new Date(deadline);
+    if (isNaN(deadlineDate.getTime())) {
+      return res.status(400).json({ message: "Invalid deadline format" });
+    }
+
+    if (deadlineDate <= new Date()) {
+      return res
+        .status(400)
+        .json({ message: "Deadline must be in the future" });
+    }
+
+    // Find and update the appeal
+    const appeal = await Appeal.findById(id);
+    if (!appeal) {
+      return res.status(404).json({ message: "Appeal not found" });
+    }
+
+    // Update deadline
+    appeal.deadline = deadlineDate;
+
+    // Add to timeline
+    appeal.timeline.push({
+      action: "deadline_set",
+      description: `Deadline set to ${deadlineDate.toLocaleDateString()}${
+        reason ? ` - Reason: ${reason}` : ""
+      }`,
+      performedBy: req.user._id,
+      timestamp: new Date(),
+    });
+
+    // Add note if reason provided
+    if (reason) {
+      appeal.notes.push({
+        content: `Deadline set: ${deadlineDate.toLocaleDateString()}. Reason: ${reason}`,
+        author: req.user._id,
+        timestamp: new Date(),
+        isInternal: true,
+      });
+    }
+
+    await appeal.save();
+
+    // Populate references for response
+    await appeal.populate(
+      "student",
+      "firstName lastName email studentId department"
+    );
+    await appeal.populate("assignedReviewer", "firstName lastName");
+    await appeal.populate("assignedAdmin", "firstName lastName");
+
+    res.json({
+      message: "Deadline set successfully",
+      appeal: {
+        _id: appeal._id,
+        appealId: appeal.appealId,
+        deadline: appeal.deadline,
+        status: appeal.status,
+        student: appeal.student,
+        assignedReviewer: appeal.assignedReviewer,
+        assignedAdmin: appeal.assignedAdmin,
+        timeline: appeal.timeline.slice(-5), // Last 5 timeline entries
+      },
+    });
+  } catch (error) {
+    console.error("Set deadline error:", error);
+    res.status(500).json({ message: "Server error while setting deadline" });
+  }
+});
+
+// @route   DELETE /api/admin/appeals/:id/deadline
+// @desc    Remove deadline from an appeal
+// @access  Private (Admin)
+router.delete("/appeals/:id/deadline", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    // Find and update the appeal
+    const appeal = await Appeal.findById(id);
+    if (!appeal) {
+      return res.status(404).json({ message: "Appeal not found" });
+    }
+
+    // Remove deadline
+    appeal.deadline = undefined;
+
+    // Add to timeline
+    appeal.timeline.push({
+      action: "deadline_removed",
+      description: `Deadline removed${reason ? ` - Reason: ${reason}` : ""}`,
+      performedBy: req.user._id,
+      timestamp: new Date(),
+    });
+
+    // Add note if reason provided
+    if (reason) {
+      appeal.notes.push({
+        content: `Deadline removed. Reason: ${reason}`,
+        author: req.user._id,
+        timestamp: new Date(),
+        isInternal: true,
+      });
+    }
+
+    await appeal.save();
+
+    // Populate references for response
+    await appeal.populate(
+      "student",
+      "firstName lastName email studentId department"
+    );
+    await appeal.populate("assignedReviewer", "firstName lastName");
+    await appeal.populate("assignedAdmin", "firstName lastName");
+
+    res.json({
+      message: "Deadline removed successfully",
+      appeal: {
+        _id: appeal._id,
+        appealId: appeal.appealId,
+        deadline: appeal.deadline,
+        status: appeal.status,
+        student: appeal.student,
+        assignedReviewer: appeal.assignedReviewer,
+        assignedAdmin: appeal.assignedAdmin,
+        timeline: appeal.timeline.slice(-5), // Last 5 timeline entries
+      },
+    });
+  } catch (error) {
+    console.error("Remove deadline error:", error);
+    res.status(500).json({ message: "Server error while removing deadline" });
+  }
+});
+
+// @route   GET /api/admin/appeals/deadlines
+// @desc    Get appeals with upcoming deadlines
+// @access  Private (Admin)
+router.get("/appeals/deadlines", async (req, res) => {
+  try {
+    const { days = 7, status, department } = req.query;
+
+    // Calculate date range for upcoming deadlines
+    const now = new Date();
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + parseInt(days));
+
+    let query = {
+      deadline: { $exists: true, $ne: null },
+      deadline: { $gte: now, $lte: futureDate },
+    };
+
+    // Apply additional filters
+    if (status) query.status = status;
+    if (department) {
+      const students = await User.find({ role: "student", department });
+      const studentIds = students.map((student) => student._id);
+      query.student = { $in: studentIds };
+    }
+
+    const appeals = await Appeal.find(query)
+      .populate("student", "firstName lastName email studentId department")
+      .populate("assignedReviewer", "firstName lastName")
+      .populate("assignedAdmin", "firstName lastName")
+      .sort({ deadline: 1 }) // Sort by deadline (earliest first)
+      .limit(50); // Limit to prevent overwhelming response
+
+    // Group by deadline proximity
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const nextWeek = new Date(today);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+
+    const groupedAppeals = {
+      overdue: [],
+      today: [],
+      tomorrow: [],
+      thisWeek: [],
+      upcoming: [],
+    };
+
+    appeals.forEach((appeal) => {
+      const deadlineDate = new Date(appeal.deadline);
+      deadlineDate.setHours(0, 0, 0, 0);
+
+      if (deadlineDate < today) {
+        groupedAppeals.overdue.push(appeal);
+      } else if (deadlineDate.getTime() === today.getTime()) {
+        groupedAppeals.today.push(appeal);
+      } else if (deadlineDate.getTime() === tomorrow.getTime()) {
+        groupedAppeals.tomorrow.push(appeal);
+      } else if (deadlineDate <= nextWeek) {
+        groupedAppeals.thisWeek.push(appeal);
+      } else {
+        groupedAppeals.upcoming.push(appeal);
+      }
+    });
+
+    res.json({
+      days: parseInt(days),
+      total: appeals.length,
+      grouped: groupedAppeals,
+      summary: {
+        overdue: groupedAppeals.overdue.length,
+        today: groupedAppeals.today.length,
+        tomorrow: groupedAppeals.tomorrow.length,
+        thisWeek: groupedAppeals.thisWeek.length,
+        upcoming: groupedAppeals.upcoming.length,
+      },
+    });
+  } catch (error) {
+    console.error("Get deadlines error:", error);
+    res.status(500).json({ message: "Server error while fetching deadlines" });
+  }
+});
+
+// @route   PUT /api/admin/appeals/bulk-deadlines
+// @desc    Set deadlines for multiple appeals
+// @access  Private (Admin)
+router.put("/appeals/bulk-deadlines", async (req, res) => {
+  try {
+    const { appealIds, deadline, reason } = req.body;
+
+    // Validate input
+    if (!appealIds || !Array.isArray(appealIds) || appealIds.length === 0) {
+      return res.status(400).json({ message: "Appeal IDs array is required" });
+    }
+
+    if (!deadline) {
+      return res.status(400).json({ message: "Deadline is required" });
+    }
+
+    // Validate deadline format and ensure it's in the future
+    const deadlineDate = new Date(deadline);
+    if (isNaN(deadlineDate.getTime())) {
+      return res.status(400).json({ message: "Invalid deadline format" });
+    }
+
+    if (deadlineDate <= new Date()) {
+      return res
+        .status(400)
+        .json({ message: "Deadline must be in the future" });
+    }
+
+    // Update all appeals
+    const updatePromises = appealIds.map(async (appealId) => {
+      const appeal = await Appeal.findById(appealId);
+      if (!appeal) return null;
+
+      appeal.deadline = deadlineDate;
+
+      // Add to timeline
+      appeal.timeline.push({
+        action: "deadline_set_bulk",
+        description: `Deadline set to ${deadlineDate.toLocaleDateString()} via bulk operation${
+          reason ? ` - Reason: ${reason}` : ""
+        }`,
+        performedBy: req.user._id,
+        timestamp: new Date(),
+      });
+
+      // Add note if reason provided
+      if (reason) {
+        appeal.notes.push({
+          content: `Deadline set via bulk operation: ${deadlineDate.toLocaleDateString()}. Reason: ${reason}`,
+          author: req.user._id,
+          timestamp: new Date(),
+          isInternal: true,
+        });
+      }
+
+      return appeal.save();
+    });
+
+    const results = await Promise.all(updatePromises);
+    const successfulUpdates = results.filter((result) => result !== null);
+    const failedUpdates = appealIds.length - successfulUpdates.length;
+
+    res.json({
+      message: `Deadlines set for ${successfulUpdates.length} appeals`,
+      total: appealIds.length,
+      successful: successfulUpdates.length,
+      failed: failedUpdates,
+      deadline: deadlineDate,
+      reason: reason || null,
+    });
+  } catch (error) {
+    console.error("Bulk deadlines error:", error);
+    res
+      .status(500)
+      .json({ message: "Server error while setting bulk deadlines" });
   }
 });
 

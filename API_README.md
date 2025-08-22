@@ -729,6 +729,136 @@ GET /api/admin/reports/export-csv
 
 - Appeal ID, Student Name, Student ID, Department, Email, Appeal Type, Grounds, Status, Priority, Submitted Date, Assigned Reviewer, Assigned Admin, Resolution Time (days)
 
+### Deadline Management
+
+#### Set Appeal Deadline
+
+```http
+PUT /api/admin/appeals/:id/deadline
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+
+```json
+{
+  "deadline": "2024-12-31T23:59:59.000Z",
+  "reason": "End of semester deadline"
+}
+```
+
+**Response:**
+
+```json
+{
+  "message": "Deadline set successfully",
+  "appeal": {
+    "_id": "...",
+    "appealId": "APL-2024-123456",
+    "deadline": "2024-12-31T23:59:59.000Z",
+    "status": "under review",
+    "student": {...},
+    "assignedReviewer": {...},
+    "assignedAdmin": {...},
+    "timeline": [...]
+  }
+}
+```
+
+#### Remove Appeal Deadline
+
+```http
+DELETE /api/admin/appeals/:id/deadline
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+
+```json
+{
+  "reason": "Appeal resolved early"
+}
+```
+
+**Response:**
+
+```json
+{
+  "message": "Deadline removed successfully",
+  "appeal": {...}
+}
+```
+
+#### Get Appeals with Deadlines
+
+```http
+GET /api/admin/appeals/deadlines
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query Parameters:**
+
+- `days` (optional): Number of days to look ahead (default: 7)
+- `status` (optional): Filter by appeal status
+- `department` (optional): Filter by department
+
+**Response:**
+
+```json
+{
+  "days": 7,
+  "total": 15,
+  "grouped": {
+    "overdue": [...],
+    "today": [...],
+    "tomorrow": [...],
+    "thisWeek": [...],
+    "upcoming": [...]
+  },
+  "summary": {
+    "overdue": 2,
+    "today": 3,
+    "tomorrow": 1,
+    "thisWeek": 5,
+    "upcoming": 4
+  }
+}
+```
+
+#### Set Bulk Deadlines
+
+```http
+PUT /api/admin/appeals/bulk-deadlines
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+
+```json
+{
+  "appealIds": ["appealId1", "appealId2", "appealId3"],
+  "deadline": "2024-12-31T23:59:59.000Z",
+  "reason": "End of semester deadline for all appeals"
+}
+```
+
+**Response:**
+
+```json
+{
+  "message": "Deadlines set for 3 appeals",
+  "total": 3,
+  "successful": 3,
+  "failed": 0,
+  "deadline": "2024-12-31T23:59:59.000Z",
+  "reason": "End of semester deadline for all appeals"
+}
+```
+
 ````
 
 ---
