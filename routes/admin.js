@@ -8,19 +8,14 @@ const fs = require("fs-extra");
 
 const router = express.Router();
 
-// All routes require admin role
 router.use(auth, requireAdmin);
 
-// @route   GET /api/admin/appeals/:id/evidence/:filename/download
-// @desc    Download evidence file for a specific appeal (admin access)
-// @access  Private (Admin)
 router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
   try {
     const { id, filename } = req.params;
 
     console.log("Admin download request:", { id, filename });
 
-    // Find the appeal
     const appeal = await Appeal.findById(id);
 
     if (!appeal) {
@@ -31,7 +26,6 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
     console.log("Appeal found:", appeal._id);
     console.log("Appeal evidence:", appeal.evidence);
 
-    // Find the evidence file
     const evidenceFile = appeal.evidence.find(
       (file) => file.filename === filename || file.originalName === filename
     );
@@ -43,7 +37,6 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
       return res.status(404).json({ message: "Evidence file not found" });
     }
 
-    // Construct the file path
     const filePath = path.join(
       __dirname,
       "..",
@@ -51,13 +44,11 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
       evidenceFile.filename
     );
 
-    // Check if file exists
     if (!(await fs.pathExists(filePath))) {
       console.log("File not found on server:", filePath);
       return res.status(404).json({ message: "File not found on server" });
     }
 
-    // Set response headers for file download
     res.setHeader(
       "Content-Type",
       evidenceFile.mimeType || "application/octet-stream"
@@ -69,7 +60,6 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
       }"`
     );
 
-    // Stream the file
     const fileStream = fs.createReadStream(filePath);
     fileStream.pipe(res);
   } catch (error) {
@@ -78,9 +68,6 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
   }
 });
 
-// @route   GET /api/admin/appeals
-// @desc    Get all appeals (admin view)
-// @access  Private (Admin)
 router.get("/appeals", async (req, res) => {
   try {
     const {
@@ -94,7 +81,6 @@ router.get("/appeals", async (req, res) => {
     } = req.query;
     let query = {};
 
-    // Apply filters
     if (status) query.status = status;
     if (appealType) query.appealType = appealType;
     if (department) {

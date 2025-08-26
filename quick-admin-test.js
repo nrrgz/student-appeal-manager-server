@@ -6,14 +6,12 @@ async function quickAdminTest() {
   console.log("🚀 Quick Admin API Test...\n");
 
   try {
-    // Test 1: Health check
     console.log("1️⃣ Testing Server Health...");
     const healthResponse = await axios.get(
       `${BASE_URL.replace("/api", "")}/health`
     );
     console.log(`✅ Server health: ${healthResponse.data.status}\n`);
 
-    // Test 2: Test basic route
     console.log("2️⃣ Testing Basic Route...");
     const basicResponse = await axios.get(`${BASE_URL.replace("/api", "")}/`);
     console.log(`✅ Basic route: ${basicResponse.data.message}\n`);

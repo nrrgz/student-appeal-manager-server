@@ -6,16 +6,13 @@ const path = require("path");
 const fs = require("fs-extra");
 const multer = require("multer");
 
-// Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, "..", "uploads");
-    // Ensure uploads directory exists
     fs.ensureDirSync(uploadDir);
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    // Generate unique filename
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     const ext = path.extname(file.originalname);
     cb(null, uniqueSuffix + ext);
@@ -25,10 +22,9 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 10 * 1024 * 1024,
   },
   fileFilter: function (req, file, cb) {
-    // Allow common file types
     const allowedTypes = [
       "image/jpeg",
       "image/png",
@@ -53,16 +49,12 @@ const upload = multer({
 
 const router = express.Router();
 
-// @route   POST /api/appeals
-// @desc    Create a new appeal (students only)
-// @access  Private (Student)
 router.post(
   "/",
   [
     auth,
     requireStudent,
-    upload.array("evidence", 10), // Allow up to 10 files
-    // Declaration & Deadline
+    upload.array("evidence", 10),
     body("declaration")
       .custom((value) => {
         if (value === "true" || value === true) return true;
@@ -78,7 +70,6 @@ router.post(
       })
       .withMessage("Deadline check must be confirmed"),
 
-    // Personal Information
     body("firstName").trim().notEmpty().withMessage("First name is required"),
     body("lastName").trim().notEmpty().withMessage("Last name is required"),
     body("studentId").trim().notEmpty().withMessage("Student ID is required"),
@@ -87,18 +78,18 @@ router.post(
       .normalizeEmail()
       .withMessage("Valid email is required"),
     body("phone").optional().trim(),
+    body("course").trim().notEmpty().withMessage("Course is required"),
     body("department")
       .trim()
       .notEmpty()
       .withMessage("Department selection is required"),
 
-    // Adviser Information
     body("hasAdviser")
       .optional()
       .custom((value) => {
         if (value === undefined || value === null) return true;
         if (value === "true" || value === true) return true;
-        if (value === "false" || value === false) return true; // Allow false values
+        if (value === "false" || value === false) return true;
         throw new Error("hasAdviser must be a boolean");
       }),
     body("adviserName").optional({ checkFalsy: true }).trim(),
@@ -108,7 +99,6 @@ router.post(
       .normalizeEmail(),
     body("adviserPhone").optional({ checkFalsy: true }).trim(),
 
-    // Appeal Details
     body("appealType")
       .isIn([
         "Academic Judgment",
@@ -118,21 +108,15 @@ router.post(
         "Other",
       ])
       .withMessage("Valid appeal type is required"),
-    // Grounds validation removed - no validation required
     body("statement")
       .trim()
       .notEmpty()
       .withMessage("Appeal statement is required"),
 
-    // Evidence (optional) - handled by multer
-    // grounds validation removed - will be handled in route logic
-
-    // Academic Context
     body("moduleCode").optional().trim(),
     body("academicYear").notEmpty().withMessage("Academic year is required"),
     body("semester").optional().isIn(["1", "2", "summer", "full year"]),
 
-    // Confirmation
     body("confirmAll")
       .custom((value) => {
         if (value === "true" || value === true) return true;
@@ -143,13 +127,11 @@ router.post(
   ],
   async (req, res) => {
     try {
-      // Check validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
 
-      // Debug: Log the entire request
       console.log("=== REQUEST DEBUG ===");
       console.log("req.body:", req.body);
       console.log("req.files:", req.files);
@@ -165,6 +147,7 @@ router.post(
         studentId,
         email,
         phone,
+        course,
         department,
         hasAdviser,
         adviserName,
@@ -180,12 +163,10 @@ router.post(
         confirmAll,
       } = req.body;
 
-      // Handle grounds from FormData (might be array or individual fields)
       let grounds = rawGrounds;
       if (Array.isArray(rawGrounds)) {
         grounds = rawGrounds;
       } else if (typeof rawGrounds === "string") {
-        // Try to parse as JSON, or treat as single ground
         try {
           grounds = JSON.parse(rawGrounds);
         } catch (e) {
@@ -195,12 +176,10 @@ router.post(
         grounds = [];
       }
 
-      // No validation required for grounds - just ensure it's an array
       if (!Array.isArray(grounds)) {
         grounds = [];
       }
 
-      // Debug: Log the received data
       console.log("Received appeal data:", {
         declaration,
         deadlineCheck,
@@ -209,6 +188,7 @@ router.post(
         studentId,
         email,
         phone,
+        course,
         department,
         hasAdviser,
         adviserName,
@@ -234,21 +214,18 @@ router.post(
       console.log("Files received:", req.files);
       console.log("User from auth:", req.user);
 
-      // Verify user has accepted all required confirmations
       if (!declaration || !deadlineCheck || !confirmAll) {
         return res.status(400).json({
           message: "All required confirmations must be accepted",
         });
       }
 
-      // Verify student ID matches the authenticated user
       if (studentId !== req.user.studentId) {
         return res.status(400).json({
           message: "Student ID must match your registered student ID",
         });
       }
 
-      // Create new appeal
       console.log("Creating appeal with data:", {
         student: req.user._id,
         declaration,
@@ -258,6 +235,7 @@ router.post(
         studentId,
         email,
         phone,
+        course,
         hasAdviser,
         adviserName: hasAdviser ? adviserName : undefined,
         adviserEmail: hasAdviser ? adviserEmail : undefined,
@@ -276,7 +254,6 @@ router.post(
       console.log("User ID type:", typeof req.user._id);
       console.log("User ID value:", req.user._id);
 
-      // Process uploaded files
       let processedEvidence = [];
       console.log("req.files:", req.files);
       console.log("req.files type:", typeof req.files);
@@ -291,9 +268,9 @@ router.post(
         processedEvidence = req.files.map((file) => {
           console.log("Processing file:", file);
           return {
-            filename: file.filename, // This is the unique filename stored on disk
-            originalName: file.originalname, // This is the original filename
-            path: file.path, // This is the full path to the file
+            filename: file.filename,
+            originalName: file.originalname,
+            path: file.path,
             fileSize: file.size,
             mimeType: file.mimetype,
             uploadedAt: new Date(),
@@ -313,6 +290,7 @@ router.post(
         studentId,
         email,
         phone,
+        course,
         department,
         hasAdviser,
         adviserName: hasAdviser ? adviserName : undefined,
@@ -321,14 +299,13 @@ router.post(
         appealType,
         grounds,
         statement,
-        evidence: processedEvidence, // Use the processed uploaded files
+        evidence: processedEvidence,
         moduleCode,
         academicYear,
         semester,
         confirmAll,
       });
 
-      // Ensure evidence is always an array in the appeal object
       if (!Array.isArray(appeal.evidence)) {
         appeal.evidence = [];
       }
@@ -363,7 +340,6 @@ router.post(
         JSON.stringify(appeal, null, 2)
       );
 
-      // Add to timeline
       appeal.timeline.push({
         action: "Appeal submitted",
         description: `Appeal created and submitted for review - Type: ${appealType}`,
@@ -385,7 +361,6 @@ router.post(
         Array.isArray(appeal.evidence)
       );
 
-      // Populate student info for response
       await appeal.populate("student", "firstName lastName email studentId");
 
       console.log("Evidence field after populate:", appeal.evidence);
@@ -424,9 +399,6 @@ router.post(
   }
 );
 
-// @route   GET /api/appeals
-// @desc    Get student's own appeals
-// @access  Private (Student)
 router.get("/", auth, requireStudent, async (req, res) => {
   try {
     const appeals = await Appeal.find({ student: req.user._id })
@@ -470,7 +442,6 @@ router.get(
       console.log("Appeal found:", appeal._id);
       console.log("Appeal evidence:", appeal.evidence);
 
-      // Find the evidence file
       const evidenceFile = appeal.evidence.find(
         (file) => file.filename === filename || file.originalName === filename
       );
@@ -482,7 +453,6 @@ router.get(
         return res.status(404).json({ message: "Evidence file not found" });
       }
 
-      // Construct the file path
       const filePath = path.join(
         __dirname,
         "..",
@@ -490,12 +460,10 @@ router.get(
         evidenceFile.filename
       );
 
-      // Check if file exists
       if (!(await fs.pathExists(filePath))) {
         return res.status(404).json({ message: "File not found on server" });
       }
 
-      // Set response headers for file download
       res.setHeader(
         "Content-Type",
         evidenceFile.mimeType || "application/octet-stream"
@@ -507,7 +475,6 @@ router.get(
         }"`
       );
 
-      // Stream the file
       const fileStream = fs.createReadStream(filePath);
       fileStream.pipe(res);
     } catch (error) {
@@ -517,9 +484,6 @@ router.get(
   }
 );
 
-// @route   GET /api/appeals/:id
-// @desc    Get specific appeal by ID (student's own appeal)
-// @access  Private (Student)
 router.get("/:id", auth, requireStudent, async (req, res) => {
   try {
     const appeal = await Appeal.findOne({
@@ -532,12 +496,10 @@ router.get("/:id", auth, requireStudent, async (req, res) => {
       .populate("timeline.performedBy", "firstName lastName role")
       .populate("notes.author", "firstName lastName role");
 
-    // Filter out internal notes for students
     if (appeal && appeal.notes) {
       appeal.notes = appeal.notes.filter((note) => !note.isInternal);
     }
 
-    // Ensure evidence is always an array
     if (!Array.isArray(appeal.evidence)) {
       appeal.evidence = [];
     }
@@ -619,13 +581,12 @@ router.post(
       const note = {
         content,
         author: req.user._id,
-        isInternal: false, // Students can only add public notes
+        isInternal: false,
       };
 
       appeal.notes.push(note);
       await appeal.save();
 
-      // Add to timeline
       appeal.timeline.push({
         action: "Note added",
         description: `Note added by student: ${req.user.firstName} ${req.user.lastName}`,
@@ -647,14 +608,10 @@ router.post(
   }
 );
 
-// @route   GET /api/appeals/dashboard
-// @desc    Get student's appeal statistics for dashboard
-// @access  Private (Student)
 router.get("/dashboard", auth, requireStudent, async (req, res) => {
   try {
     const query = { student: req.user._id };
 
-    // Get appeals by status
     const statusCounts = await Appeal.aggregate([
       { $match: query },
       {
@@ -665,7 +622,6 @@ router.get("/dashboard", auth, requireStudent, async (req, res) => {
       },
     ]);
 
-    // Get appeals by type
     const typeCounts = await Appeal.aggregate([
       { $match: query },
       {
@@ -676,13 +632,11 @@ router.get("/dashboard", auth, requireStudent, async (req, res) => {
       },
     ]);
 
-    // Get recent appeals
     const recentAppeals = await Appeal.find(query)
       .populate("student", "firstName lastName email studentId")
       .sort({ createdAt: -1 })
       .limit(5);
 
-    // Format status counts
     const statusSummary = {
       submitted: 0,
       "under review": 0,

@@ -3,12 +3,10 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
 
-// Middleware
 app.use(
   cors({
     origin: process.env.CORS_ORIGIN || "http://localhost:3000",
@@ -18,7 +16,6 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// MongoDB Connection
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(
@@ -31,7 +28,6 @@ const connectDB = async () => {
   }
 };
 
-// Routes
 console.log("Loading routes...");
 try {
   app.use("/api/auth", require("./routes/auth"));
@@ -70,12 +66,10 @@ try {
 
 console.log("All routes loaded successfully");
 
-// Basic route for testing
 app.get("/", (req, res) => {
   res.json({ message: "Student Appeal Manager API is running!" });
 });
 
-// Health check endpoint
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
@@ -84,20 +78,17 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ message: "Something went wrong!" });
 });
 
-// 404 handler
 app.use("*", (req, res) => {
   res.status(404).json({ message: "Route not found" });
 });
 
 const PORT = process.env.PORT || 5000;
 
-// Start server
 const startServer = async () => {
   try {
     await connectDB();
@@ -111,5 +102,4 @@ const startServer = async () => {
   }
 };
 
-// Start the server
 startServer();

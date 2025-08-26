@@ -1,9 +1,7 @@
-// Simple test to verify appeal creation works
 const mongoose = require("mongoose");
 const Appeal = require("./models/Appeal");
 const User = require("./models/User");
 
-// Test data
 const testAppealData = {
   declaration: true,
   deadlineCheck: true,
@@ -27,11 +25,9 @@ const testAppealData = {
 
 async function testAppealCreation() {
   try {
-    // Connect to MongoDB (use your connection string)
     await mongoose.connect("mongodb://localhost:27017/appeal_system");
     console.log("Connected to MongoDB");
 
-    // Create a test user first
     const testUser = new User({
       email: "test@example.com",
       password: "password123",
@@ -44,7 +40,6 @@ async function testAppealCreation() {
     await testUser.save();
     console.log("Test user created:", testUser._id);
 
-    // Create appeal
     const appeal = new Appeal({
       ...testAppealData,
       student: testUser._id,
@@ -60,7 +55,6 @@ async function testAppealCreation() {
     console.log("Appeal Appeal ID:", appeal.appealId);
     console.log("Full appeal:", JSON.stringify(appeal, null, 2));
 
-    // Clean up
     await Appeal.findByIdAndDelete(appeal._id);
     await User.findByIdAndDelete(testUser._id);
     console.log("Test data cleaned up");
@@ -77,5 +71,4 @@ async function testAppealCreation() {
   }
 }
 
-// Run the test
 testAppealCreation();

@@ -6,14 +6,10 @@ const { auth } = require("../middleware/auth");
 
 const router = express.Router();
 
-// Generate JWT token
 const generateToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
 
-// @route   POST /api/auth/register
-// @desc    Register a new user
-// @access  Public
 router.post(
   "/register",
   [
@@ -27,7 +23,6 @@ router.post(
   ],
   async (req, res) => {
     try {
-      // Check validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -43,7 +38,6 @@ router.post(
         department,
       } = req.body;
 
-      // Check if user already exists
       const existingUser = await User.findOne({ email });
       if (existingUser) {
         return res
@@ -51,7 +45,6 @@ router.post(
           .json({ message: "User with this email already exists" });
       }
 
-      // Check if student ID already exists for students
       if (role === "student" && studentId) {
         const existingStudent = await User.findOne({ studentId });
         if (existingStudent) {
@@ -59,7 +52,6 @@ router.post(
         }
       }
 
-      // Create user
       const user = new User({
         email,
         password,
@@ -72,10 +64,8 @@ router.post(
 
       await user.save();
 
-      // Generate token
       const token = generateToken(user._id);
 
-      // Update last login
       user.lastLogin = new Date();
       await user.save();
 
@@ -91,9 +81,6 @@ router.post(
   }
 );
 
-// @route   POST /api/auth/login
-// @desc    Authenticate user & get token
-// @access  Public
 router.post(
   "/login",
   [body("email").isEmail().normalizeEmail(), body("password").notEmpty()],
@@ -113,28 +100,23 @@ router.post(
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
-      // Check if user is active
       if (!user.isActive) {
         return res.status(400).json({ message: "Account is deactivated" });
       }
 
-      // Check role if specified
       if (role && user.role !== role) {
         return res
           .status(400)
           .json({ message: "Invalid role for this account" });
       }
 
-      // Check password
       const isMatch = await user.comparePassword(password);
       if (!isMatch) {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
-      // Generate token
       const token = generateToken(user._id);
 
-      // Update last login
       user.lastLogin = new Date();
       await user.save();
 
@@ -150,9 +132,6 @@ router.post(
   }
 );
 
-// @route   GET /api/auth/profile
-// @desc    Get user profile
-// @access  Private
 router.get("/profile", auth, async (req, res) => {
   try {
     res.json({ user: req.user });
@@ -162,9 +141,6 @@ router.get("/profile", auth, async (req, res) => {
   }
 });
 
-// @route   PUT /api/auth/profile
-// @desc    Update user profile
-// @access  Private
 router.put(
   "/profile",
   auth,
@@ -205,13 +181,8 @@ router.put(
   }
 );
 
-// @route   POST /api/auth/logout
-// @desc    Logout user (client-side token removal)
-// @access  Private
 router.post("/logout", auth, async (req, res) => {
   try {
-    // In a real application, you might want to blacklist the token
-    // For now, we'll just return success and let the client remove the token
     res.json({ message: "Logout successful" });
   } catch (error) {
     console.error("Logout error:", error);
