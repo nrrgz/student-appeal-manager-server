@@ -10,9 +10,6 @@ const {
 
 const router = express.Router();
 
-// @route   GET /api/users/profile
-// @desc    Get current user profile
-// @access  Private
 router.get("/profile", auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select("-password");
@@ -28,9 +25,6 @@ router.get("/profile", auth, async (req, res) => {
   }
 });
 
-// @route   GET /api/users
-// @desc    Get all users (admin only)
-// @access  Private (Admin)
 router.get("/", auth, requireAdmin, async (req, res) => {
   try {
     const { role, department, page = 1, limit = 10 } = req.query;
@@ -65,9 +59,6 @@ router.get("/", auth, requireAdmin, async (req, res) => {
   }
 });
 
-// @route   GET /api/users/reviewers
-// @desc    Get all reviewers (for assignment purposes)
-// @access  Private (Admin/Reviewer)
 router.get("/reviewers", auth, requireAdminOrReviewer, async (req, res) => {
   try {
     const reviewers = await User.find({
@@ -84,9 +75,6 @@ router.get("/reviewers", auth, requireAdminOrReviewer, async (req, res) => {
   }
 });
 
-// @route   GET /api/users/admins
-// @desc    Get all admins (for assignment purposes)
-// @access  Private (Admin)
 router.get("/admins", auth, requireAdmin, async (req, res) => {
   try {
     const admins = await User.find({
@@ -103,9 +91,6 @@ router.get("/admins", auth, requireAdmin, async (req, res) => {
   }
 });
 
-// @route   GET /api/users/:id
-// @desc    Get user by ID
-// @access  Private
 router.get("/:id", auth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select("-password");
@@ -114,7 +99,6 @@ router.get("/:id", auth, async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Check access permissions
     if (
       req.user.role === "student" &&
       req.user._id.toString() !== req.params.id
@@ -129,9 +113,6 @@ router.get("/:id", auth, async (req, res) => {
   }
 });
 
-// @route   PUT /api/users/:id
-// @desc    Update user (admin only, or own profile)
-// @access  Private
 router.put(
   "/:id",
   [
@@ -143,7 +124,6 @@ router.put(
   ],
   async (req, res) => {
     try {
-      // Check validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -152,7 +132,6 @@ router.put(
       const { firstName, lastName, department, isActive } = req.body;
       const updates = {};
 
-      // Check if user can update this profile
       const canUpdate =
         req.user.role === "admin" || req.user._id.toString() === req.params.id;
 
@@ -160,7 +139,6 @@ router.put(
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // Only admins can update isActive status
       if (isActive !== undefined && req.user.role !== "admin") {
         return res
           .status(403)
@@ -194,9 +172,6 @@ router.put(
   }
 );
 
-// @route   DELETE /api/users/:id
-// @desc    Deactivate user (admin only)
-// @access  Private (Admin)
 router.delete("/:id", auth, requireAdmin, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
@@ -205,7 +180,6 @@ router.delete("/:id", auth, requireAdmin, async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Check if user has active appeals
     const activeAppeals = await Appeal.countDocuments({
       student: req.params.id,
       status: { $in: ["submitted", "under review", "awaiting information"] },
@@ -217,7 +191,6 @@ router.delete("/:id", auth, requireAdmin, async (req, res) => {
       });
     }
 
-    // Deactivate user instead of deleting
     user.isActive = false;
     await user.save();
 
@@ -228,12 +201,8 @@ router.delete("/:id", auth, requireAdmin, async (req, res) => {
   }
 });
 
-// @route   GET /api/users/:id/appeals
-// @desc    Get appeals for a specific user
-// @access  Private
 router.get("/:id/appeals", auth, async (req, res) => {
   try {
-    // Check access permissions
     if (
       req.user.role === "student" &&
       req.user._id.toString() !== req.params.id
@@ -256,9 +225,6 @@ router.get("/:id/appeals", auth, async (req, res) => {
   }
 });
 
-// @route   GET /api/users/stats/overview
-// @desc    Get user statistics overview (admin only)
-// @access  Private (Admin)
 router.get("/stats/overview", auth, requireAdmin, async (req, res) => {
   try {
     const totalUsers = await User.countDocuments();

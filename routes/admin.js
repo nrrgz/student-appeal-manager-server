@@ -84,7 +84,6 @@ router.get("/appeals", async (req, res) => {
     if (status) query.status = status;
     if (appealType) query.appealType = appealType;
     if (department) {
-      // Find students in the specified department
       const students = await User.find({ role: "student", department });
       const studentIds = students.map((student) => student._id);
       query.student = { $in: studentIds };
@@ -131,12 +130,8 @@ router.get("/appeals", async (req, res) => {
   }
 });
 
-// @route   GET /api/admin/appeals/dashboard
-// @desc    Get admin appeal statistics for dashboard
-// @access  Private (Admin)
 router.get("/appeals/dashboard", async (req, res) => {
   try {
-    // Get appeals by status
     const statusCounts = await Appeal.aggregate([
       {
         $group: {
@@ -146,7 +141,6 @@ router.get("/appeals/dashboard", async (req, res) => {
       },
     ]);
 
-    // Get appeals by type
     const typeCounts = await Appeal.aggregate([
       {
         $group: {
@@ -156,7 +150,6 @@ router.get("/appeals/dashboard", async (req, res) => {
       },
     ]);
 
-    // Get appeals by department
     const departmentCounts = await Appeal.aggregate([
       {
         $lookup: {
@@ -177,13 +170,11 @@ router.get("/appeals/dashboard", async (req, res) => {
       },
     ]);
 
-    // Get recent appeals
     const recentAppeals = await Appeal.find()
       .populate("student", "firstName lastName email studentId department")
       .sort({ createdAt: -1 })
       .limit(10);
 
-    // Get deadline statistics
     const deadlineStats = await Appeal.aggregate([
       {
         $facet: {
@@ -221,10 +212,8 @@ router.get("/appeals/dashboard", async (req, res) => {
       },
     ]);
 
-    // Get total count of appeals
     const totalAppeals = await Appeal.countDocuments({});
 
-    // Format status counts
     const statusSummary = {
       submitted: 0,
       "under review": 0,
@@ -238,7 +227,6 @@ router.get("/appeals/dashboard", async (req, res) => {
       statusSummary[item._id] = item.count;
     });
 
-    // Format deadline statistics
     const deadlineSummary = {
       totalWithDeadlines: deadlineStats[0]?.totalWithDeadlines[0]?.count || 0,
       overdue: deadlineStats[0]?.overdue[0]?.count || 0,
@@ -246,7 +234,6 @@ router.get("/appeals/dashboard", async (req, res) => {
       dueThisWeek: deadlineStats[0]?.dueThisWeek[0]?.count || 0,
     };
 
-    // Get assignment statistics
     const assignmentStats = await Appeal.aggregate([
       {
         $facet: {
@@ -271,7 +258,6 @@ router.get("/appeals/dashboard", async (req, res) => {
       },
     ]);
 
-    // Format assignment statistics
     const assignmentSummary = {
       assignedToReviewer: assignmentStats[0]?.assignedToReviewer[0]?.count || 0,
       assignedToAdmin: assignmentStats[0]?.assignedToAdmin[0]?.count || 0,
@@ -295,9 +281,6 @@ router.get("/appeals/dashboard", async (req, res) => {
   }
 });
 
-// @route   GET /api/admin/appeals/search
-// @desc    Search appeals with filters (admin view)
-// @access  Private (Admin)
 router.get("/appeals/search", async (req, res) => {
   try {
     const {
@@ -315,7 +298,6 @@ router.get("/appeals/search", async (req, res) => {
 
     let query = {};
 
-    // Apply filters
     if (status) query.status = status;
     if (appealType) query.appealType = appealType;
     if (grounds) query.grounds = { $in: [grounds] };
@@ -368,9 +350,6 @@ router.get("/appeals/search", async (req, res) => {
   }
 });
 
-// @route   GET /api/admin/appeals/:id
-// @desc    Get specific appeal by ID (admin view)
-// @access  Private (Admin)
 router.get("/appeals/:id", async (req, res) => {
   try {
     const appeal = await Appeal.findById(req.params.id)
@@ -391,9 +370,6 @@ router.get("/appeals/:id", async (req, res) => {
   }
 });
 
-// @route   PUT /api/admin/appeals/:id/assign
-// @desc    Assign reviewer/admin to appeal
-// @access  Private (Admin)
 router.put(
   "/appeals/:id/assign",
   [
@@ -402,7 +378,7 @@ router.put(
       .custom((value) => {
         if (value === null || value === undefined) return true;
         if (typeof value === "string" && value.trim() === "") return true;
-        // Check if it's a valid MongoDB ObjectId
+
         return /^[0-9a-fA-F]{24}$/.test(value);
       })
       .withMessage("assignedReviewer must be a valid MongoDB ObjectId or null"),
@@ -411,7 +387,7 @@ router.put(
       .custom((value) => {
         if (value === null || value === undefined) return true;
         if (typeof value === "string" && value.trim() === "") return true;
-        // Check if it's a valid MongoDB ObjectId
+
         return /^[0-9a-fA-F]{24}$/.test(value);
       })
       .withMessage("assignedAdmin must be a valid MongoDB ObjectId or null"),
@@ -437,7 +413,6 @@ router.put(
       if (assignedAdmin !== undefined) updates.assignedAdmin = assignedAdmin;
       if (priority !== undefined) updates.priority = priority;
 
-      // Add to timeline
       const timelineEntry = {
         action: "Appeal assigned",
         description: `Updated by admin: ${req.user.firstName} ${req.user.lastName}`,
@@ -486,9 +461,6 @@ router.put(
   }
 );
 
-// @route   GET /api/admin/users
-// @desc    Get all users
-// @access  Private (Admin)
 router.get("/users", async (req, res) => {
   try {
     const { role, department, page = 1, limit = 10 } = req.query;
@@ -522,9 +494,6 @@ router.get("/users", async (req, res) => {
   }
 });
 
-// @route   GET /api/admin/users/reviewers
-// @desc    Get all reviewers
-// @access  Private (Admin)
 router.get("/users/reviewers", async (req, res) => {
   try {
     const reviewers = await User.find({ role: "reviewer", isActive: true })
@@ -538,9 +507,6 @@ router.get("/users/reviewers", async (req, res) => {
   }
 });
 
-// @route   GET /api/admin/users/stats
-// @desc    Get system statistics
-// @access  Private (Admin)
 router.get("/users/stats", async (req, res) => {
   try {
     const userStats = await User.aggregate([
@@ -583,9 +549,6 @@ router.get("/users/stats", async (req, res) => {
   }
 });
 
-// @route   PUT /api/admin/users/:id
-// @desc    Update user
-// @access  Private (Admin)
 router.put(
   "/users/:id",
   [
@@ -630,9 +593,6 @@ router.put(
   }
 );
 
-// @route   DELETE /api/admin/users/:id
-// @desc    Deactivate user
-// @access  Private (Admin)
 router.delete("/users/:id", async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
@@ -640,7 +600,6 @@ router.delete("/users/:id", async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Don't allow admin to deactivate themselves
     if (user._id.toString() === req.user._id.toString()) {
       return res
         .status(400)
@@ -657,9 +616,6 @@ router.delete("/users/:id", async (req, res) => {
   }
 });
 
-// @route   PUT /api/admin/appeals/:id/priority
-// @desc    Update appeal priority
-// @access  Private (Admin)
 router.put(
   "/appeals/:id/priority",
   [
@@ -681,7 +637,6 @@ router.put(
 
       const { priority } = req.body;
 
-      // Add to timeline
       const timelineEntry = {
         action: "Priority updated",
         description: `Priority changed to ${priority} by admin: ${req.user.firstName} ${req.user.lastName}`,
@@ -711,9 +666,6 @@ router.put(
   }
 );
 
-// @route   PUT /api/admin/appeals/:id/status
-// @desc    Update appeal status
-// @access  Private (Admin)
 router.put(
   "/appeals/:id/status",
   [
@@ -743,7 +695,6 @@ router.put(
 
       const { status, notes } = req.body;
 
-      // Add to timeline
       const timelineEntry = {
         action: "Status updated",
         description: `Status changed to ${status} by admin: ${req.user.firstName} ${req.user.lastName}`,
@@ -755,7 +706,6 @@ router.put(
         timeline: [...appeal.timeline, timelineEntry],
       };
 
-      // Add admin note if provided
       if (notes) {
         const noteEntry = {
           content: notes,
@@ -788,9 +738,6 @@ router.put(
   }
 );
 
-// @route   POST /api/admin/appeals/:id/notes
-// @desc    Add admin note to appeal
-// @access  Private (Admin)
 router.post(
   "/appeals/:id/notes",
   [
@@ -819,7 +766,6 @@ router.post(
         createdAt: new Date(),
       };
 
-      // Add to timeline
       const timelineEntry = {
         action: "Admin note added",
         description: `Note added by admin: ${req.user.firstName} ${req.user.lastName}`,
@@ -850,9 +796,6 @@ router.post(
   }
 );
 
-// @route   DELETE /api/admin/appeals/:id/notes/:noteId
-// @desc    Delete admin note from appeal
-// @access  Private (Admin)
 router.delete("/appeals/:id/notes/:noteId", async (req, res) => {
   try {
     const { id, noteId } = req.params;
@@ -862,7 +805,6 @@ router.delete("/appeals/:id/notes/:noteId", async (req, res) => {
       return res.status(404).json({ message: "Appeal not found" });
     }
 
-    // Find the note to delete
     const noteIndex = appeal.notes.findIndex(
       (note) => note._id.toString() === noteId
     );
@@ -871,7 +813,6 @@ router.delete("/appeals/:id/notes/:noteId", async (req, res) => {
       return res.status(404).json({ message: "Note not found" });
     }
 
-    // Check if the note belongs to the current admin or if they have permission
     const note = appeal.notes[noteIndex];
     if (
       note.author.toString() !== req.user._id.toString() &&
@@ -882,10 +823,8 @@ router.delete("/appeals/:id/notes/:noteId", async (req, res) => {
         .json({ message: "Not authorized to delete this note" });
     }
 
-    // Remove the note
     appeal.notes.splice(noteIndex, 1);
 
-    // Add to timeline
     const timelineEntry = {
       action: "Admin note deleted",
       description: `Note deleted by admin: ${req.user.firstName} ${req.user.lastName}`,
@@ -894,10 +833,8 @@ router.delete("/appeals/:id/notes/:noteId", async (req, res) => {
 
     appeal.timeline.push(timelineEntry);
 
-    // Save the updated appeal
     await appeal.save();
 
-    // Populate and return the updated appeal
     const updatedAppeal = await Appeal.findById(id)
       .populate("student", "firstName lastName email studentId")
       .populate("assignedReviewer", "firstName lastName")
@@ -914,9 +851,6 @@ router.delete("/appeals/:id/notes/:noteId", async (req, res) => {
   }
 });
 
-// @route   POST /api/admin/appeals/bulk-assign
-// @desc    Bulk assign appeals to reviewers/admins
-// @access  Private (Admin)
 router.post(
   "/appeals/bulk-assign",
   [
@@ -929,7 +863,7 @@ router.post(
       .custom((value) => {
         if (value === null || value === undefined) return true;
         if (typeof value === "string" && value.trim() === "") return true;
-        // Check if it's a valid MongoDB ObjectId
+
         return /^[0-9a-fA-F]{24}$/.test(value);
       })
       .withMessage("assignedReviewer must be a valid MongoDB ObjectId or null"),
@@ -938,7 +872,7 @@ router.post(
       .custom((value) => {
         if (value === null || value === undefined) return true;
         if (typeof value === "string" && value.trim() === "") return true;
-        // Check if it's a valid MongoDB ObjectId
+
         return /^[0-9a-fA-F]{24}$/.test(value);
       })
       .withMessage("assignedAdmin must be a valid MongoDB ObjectId or null"),
@@ -971,7 +905,6 @@ router.post(
             updates.assignedAdmin = assignedAdmin;
           if (priority !== undefined) updates.priority = priority;
 
-          // Add to timeline
           const timelineEntry = {
             action: "Bulk assignment",
             description: `Bulk assigned by admin: ${req.user.firstName} ${req.user.lastName}`,
@@ -1025,14 +958,10 @@ router.post(
   }
 );
 
-// @route   GET /api/admin/reports/appeals
-// @desc    Get detailed appeal reports and statistics
-// @access  Private (Admin)
 router.get("/reports/appeals", async (req, res) => {
   try {
     const { dateRange = "30", department, appealType } = req.query;
 
-    // Calculate date range
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(dateRange));
@@ -1042,7 +971,6 @@ router.get("/reports/appeals", async (req, res) => {
     };
 
     if (department) {
-      // Find students in the specified department
       const students = await User.find({ role: "student", department });
       const studentIds = students.map((student) => student._id);
       matchStage.student = { $in: studentIds };
@@ -1052,7 +980,6 @@ router.get("/reports/appeals", async (req, res) => {
       matchStage.appealType = appealType;
     }
 
-    // Get appeals by status with date range
     const statusCounts = await Appeal.aggregate([
       { $match: matchStage },
       {
@@ -1063,7 +990,6 @@ router.get("/reports/appeals", async (req, res) => {
       },
     ]);
 
-    // Get appeals by type with date range
     const typeCounts = await Appeal.aggregate([
       { $match: matchStage },
       {
@@ -1074,7 +1000,6 @@ router.get("/reports/appeals", async (req, res) => {
       },
     ]);
 
-    // Get appeals by department with date range
     const departmentCounts = await Appeal.aggregate([
       { $match: matchStage },
       {
@@ -1096,7 +1021,6 @@ router.get("/reports/appeals", async (req, res) => {
       },
     ]);
 
-    // Get resolution time statistics with more detailed breakdown
     const resolutionStats = await Appeal.aggregate([
       {
         $match: {
@@ -1109,7 +1033,7 @@ router.get("/reports/appeals", async (req, res) => {
           resolutionTime: {
             $divide: [
               { $subtract: ["$updatedAt", "$createdAt"] },
-              1000 * 60 * 60 * 24, // Convert to days
+              1000 * 60 * 60 * 24,
             ],
           },
         },
@@ -1125,7 +1049,6 @@ router.get("/reports/appeals", async (req, res) => {
       },
     ]);
 
-    // Get detailed resolution time distribution
     const resolutionTimeDistribution = await Appeal.aggregate([
       {
         $match: {
@@ -1138,7 +1061,7 @@ router.get("/reports/appeals", async (req, res) => {
           resolutionTime: {
             $divide: [
               { $subtract: ["$updatedAt", "$createdAt"] },
-              1000 * 60 * 60 * 24, // Convert to days
+              1000 * 60 * 60 * 24,
             ],
           },
         },
@@ -1161,7 +1084,6 @@ router.get("/reports/appeals", async (req, res) => {
       },
     ]);
 
-    // Get monthly trends
     const monthlyTrends = await Appeal.aggregate([
       { $match: matchStage },
       {
@@ -1190,7 +1112,6 @@ router.get("/reports/appeals", async (req, res) => {
       },
     ]);
 
-    // Get grounds statistics
     const groundsStats = await Appeal.aggregate([
       { $match: matchStage },
       {
@@ -1210,7 +1131,6 @@ router.get("/reports/appeals", async (req, res) => {
       },
     ]);
 
-    // Format status counts
     const statusSummary = {
       submitted: 0,
       "under review": 0,
@@ -1224,14 +1144,12 @@ router.get("/reports/appeals", async (req, res) => {
       statusSummary[item._id] = item.count;
     });
 
-    // Format monthly trends
     const formattedMonthlyTrends = monthlyTrends.map((item) => ({
       month: `${item._id.year}-${String(item._id.month).padStart(2, "0")}`,
       appeals: item.appeals,
       resolved: item.resolved,
     }));
 
-    // Format resolution time distribution
     const formattedResolutionTimes = {
       "0-2 days": 0,
       "3-5 days": 0,
@@ -1245,7 +1163,6 @@ router.get("/reports/appeals", async (req, res) => {
       }
     });
 
-    // Calculate total appeals
     const total = Object.values(statusSummary).reduce((a, b) => a + b, 0);
 
     res.json({
@@ -1263,7 +1180,7 @@ router.get("/reports/appeals", async (req, res) => {
       resolutionTimeDistribution: formattedResolutionTimes,
       monthlyTrends: formattedMonthlyTrends,
       total,
-      // Additional calculated fields for frontend
+
       pendingAppeals:
         statusSummary.submitted +
         statusSummary["under review"] +
@@ -1277,14 +1194,10 @@ router.get("/reports/appeals", async (req, res) => {
   }
 });
 
-// @route   GET /api/admin/reports/comprehensive
-// @desc    Get comprehensive reports for admin dashboard
-// @access  Private (Admin)
 router.get("/reports/comprehensive", async (req, res) => {
   try {
     const { dateRange = "30", department, appealType } = req.query;
 
-    // Calculate date range
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(dateRange));
@@ -1303,7 +1216,6 @@ router.get("/reports/comprehensive", async (req, res) => {
       matchStage.appealType = appealType;
     }
 
-    // Get all statistics in parallel for better performance
     const [
       statusCounts,
       typeCounts,
@@ -1314,19 +1226,16 @@ router.get("/reports/comprehensive", async (req, res) => {
       groundsStats,
       totalCount,
     ] = await Promise.all([
-      // Status counts
       Appeal.aggregate([
         { $match: matchStage },
         { $group: { _id: "$status", count: { $sum: 1 } } },
       ]),
 
-      // Type counts
       Appeal.aggregate([
         { $match: matchStage },
         { $group: { _id: "$appealType", count: { $sum: 1 } } },
       ]),
 
-      // Department counts
       Appeal.aggregate([
         { $match: matchStage },
         {
@@ -1341,7 +1250,6 @@ router.get("/reports/comprehensive", async (req, res) => {
         { $group: { _id: "$studentInfo.department", count: { $sum: 1 } } },
       ]),
 
-      // Resolution stats
       Appeal.aggregate([
         {
           $match: {
@@ -1370,7 +1278,6 @@ router.get("/reports/comprehensive", async (req, res) => {
         },
       ]),
 
-      // Resolution time distribution
       Appeal.aggregate([
         {
           $match: {
@@ -1406,7 +1313,6 @@ router.get("/reports/comprehensive", async (req, res) => {
         },
       ]),
 
-      // Monthly trends
       Appeal.aggregate([
         { $match: matchStage },
         {
@@ -1431,7 +1337,6 @@ router.get("/reports/comprehensive", async (req, res) => {
         { $limit: 12 },
       ]),
 
-      // Grounds stats
       Appeal.aggregate([
         { $match: matchStage },
         { $unwind: "$grounds" },
@@ -1440,11 +1345,9 @@ router.get("/reports/comprehensive", async (req, res) => {
         { $limit: 10 },
       ]),
 
-      // Total count
       Appeal.countDocuments(matchStage),
     ]);
 
-    // Format status counts
     const statusSummary = {
       submitted: 0,
       "under review": 0,
@@ -1458,7 +1361,6 @@ router.get("/reports/comprehensive", async (req, res) => {
       statusSummary[item._id] = item.count;
     });
 
-    // Format resolution time distribution
     const formattedResolutionTimes = {
       "0-2 days": 0,
       "3-5 days": 0,
@@ -1472,14 +1374,12 @@ router.get("/reports/comprehensive", async (req, res) => {
       }
     });
 
-    // Format monthly trends
     const formattedMonthlyTrends = monthlyTrends.map((item) => ({
       month: `${item._id.year}-${String(item._id.month).padStart(2, "0")}`,
       appeals: item.appeals,
       resolved: item.resolved,
     }));
 
-    // Calculate derived statistics
     const pendingAppeals =
       statusSummary.submitted +
       statusSummary["under review"] +
@@ -1505,7 +1405,7 @@ router.get("/reports/comprehensive", async (req, res) => {
       },
       resolutionTimeDistribution: formattedResolutionTimes,
       monthlyTrends: formattedMonthlyTrends,
-      // Calculated fields
+
       pendingAppeals,
       resolvedAppeals,
       rejectedAppeals,
@@ -1521,14 +1421,10 @@ router.get("/reports/comprehensive", async (req, res) => {
   }
 });
 
-// @route   GET /api/admin/reports/export-csv
-// @desc    Export reports data as CSV
-// @access  Private (Admin)
 router.get("/reports/export-csv", async (req, res) => {
   try {
     const { dateRange = "30", department, appealType } = req.query;
 
-    // Calculate date range
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(dateRange));
@@ -1547,14 +1443,12 @@ router.get("/reports/export-csv", async (req, res) => {
       matchStage.appealType = appealType;
     }
 
-    // Get appeals with populated data
     const appeals = await Appeal.find(matchStage)
       .populate("student", "firstName lastName email studentId department")
       .populate("assignedReviewer", "firstName lastName")
       .populate("assignedAdmin", "firstName lastName")
       .sort({ createdAt: -1 });
 
-    // Generate CSV content
     const csvHeaders = [
       "Appeal ID",
       "Student Name",
@@ -1609,7 +1503,6 @@ router.get("/reports/export-csv", async (req, res) => {
 
     const csvContent = [csvHeaders.join(","), ...csvRows].join("\n");
 
-    // Set response headers for CSV download
     res.setHeader("Content-Type", "text/csv");
     res.setHeader(
       "Content-Disposition",
@@ -1625,20 +1518,15 @@ router.get("/reports/export-csv", async (req, res) => {
   }
 });
 
-// @route   PUT /api/admin/appeals/:id/deadline
-// @desc    Set or update deadline for an appeal
-// @access  Private (Admin)
 router.put("/appeals/:id/deadline", async (req, res) => {
   try {
     const { id } = req.params;
     const { deadline, reason } = req.body;
 
-    // Validate deadline
     if (!deadline) {
       return res.status(400).json({ message: "Deadline is required" });
     }
 
-    // Validate deadline format and ensure it's in the future
     const deadlineDate = new Date(deadline);
     if (isNaN(deadlineDate.getTime())) {
       return res.status(400).json({ message: "Invalid deadline format" });
@@ -1650,16 +1538,13 @@ router.put("/appeals/:id/deadline", async (req, res) => {
         .json({ message: "Deadline must be in the future" });
     }
 
-    // Find and update the appeal
     const appeal = await Appeal.findById(id);
     if (!appeal) {
       return res.status(404).json({ message: "Appeal not found" });
     }
 
-    // Update deadline
     appeal.deadline = deadlineDate;
 
-    // Add to timeline
     appeal.timeline.push({
       action: "deadline_set",
       description: `Deadline set to ${deadlineDate.toLocaleDateString()}${
@@ -1669,7 +1554,6 @@ router.put("/appeals/:id/deadline", async (req, res) => {
       timestamp: new Date(),
     });
 
-    // Add note if reason provided
     if (reason) {
       appeal.notes.push({
         content: `Deadline set: ${deadlineDate.toLocaleDateString()}. Reason: ${reason}`,
@@ -1681,7 +1565,6 @@ router.put("/appeals/:id/deadline", async (req, res) => {
 
     await appeal.save();
 
-    // Populate references for response
     await appeal.populate(
       "student",
       "firstName lastName email studentId department"
@@ -1699,7 +1582,6 @@ router.put("/appeals/:id/deadline", async (req, res) => {
         student: appeal.student,
         assignedReviewer: appeal.assignedReviewer,
         assignedAdmin: appeal.assignedAdmin,
-        timeline: appeal.timeline.slice(-5), // Last 5 timeline entries
       },
     });
   } catch (error) {
@@ -1708,24 +1590,18 @@ router.put("/appeals/:id/deadline", async (req, res) => {
   }
 });
 
-// @route   DELETE /api/admin/appeals/:id/deadline
-// @desc    Remove deadline from an appeal
-// @access  Private (Admin)
 router.delete("/appeals/:id/deadline", async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
 
-    // Find and update the appeal
     const appeal = await Appeal.findById(id);
     if (!appeal) {
       return res.status(404).json({ message: "Appeal not found" });
     }
 
-    // Remove deadline
     appeal.deadline = undefined;
 
-    // Add to timeline
     appeal.timeline.push({
       action: "deadline_removed",
       description: `Deadline removed${reason ? ` - Reason: ${reason}` : ""}`,
@@ -1733,7 +1609,6 @@ router.delete("/appeals/:id/deadline", async (req, res) => {
       timestamp: new Date(),
     });
 
-    // Add note if reason provided
     if (reason) {
       appeal.notes.push({
         content: `Deadline removed. Reason: ${reason}`,
@@ -1745,7 +1620,6 @@ router.delete("/appeals/:id/deadline", async (req, res) => {
 
     await appeal.save();
 
-    // Populate references for response
     await appeal.populate(
       "student",
       "firstName lastName email studentId department"
@@ -1763,7 +1637,6 @@ router.delete("/appeals/:id/deadline", async (req, res) => {
         student: appeal.student,
         assignedReviewer: appeal.assignedReviewer,
         assignedAdmin: appeal.assignedAdmin,
-        timeline: appeal.timeline.slice(-5), // Last 5 timeline entries
       },
     });
   } catch (error) {
@@ -1772,14 +1645,10 @@ router.delete("/appeals/:id/deadline", async (req, res) => {
   }
 });
 
-// @route   GET /api/admin/appeals/deadlines
-// @desc    Get appeals with upcoming deadlines
-// @access  Private (Admin)
 router.get("/appeals/deadlines", async (req, res) => {
   try {
     const { days = 7, status, department } = req.query;
 
-    // Calculate date range for upcoming deadlines
     const now = new Date();
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + parseInt(days));
@@ -1789,7 +1658,6 @@ router.get("/appeals/deadlines", async (req, res) => {
       deadline: { $gte: now, $lte: futureDate },
     };
 
-    // Apply additional filters
     if (status) query.status = status;
     if (department) {
       const students = await User.find({ role: "student", department });
@@ -1800,11 +1668,8 @@ router.get("/appeals/deadlines", async (req, res) => {
     const appeals = await Appeal.find(query)
       .populate("student", "firstName lastName email studentId department")
       .populate("assignedReviewer", "firstName lastName")
-      .populate("assignedAdmin", "firstName lastName")
-      .sort({ deadline: 1 }) // Sort by deadline (earliest first)
-      .limit(50); // Limit to prevent overwhelming response
+      .populate("assignedAdmin", "firstName lastName");
 
-    // Group by deadline proximity
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -1857,14 +1722,10 @@ router.get("/appeals/deadlines", async (req, res) => {
   }
 });
 
-// @route   PUT /api/admin/appeals/bulk-deadlines
-// @desc    Set deadlines for multiple appeals
-// @access  Private (Admin)
 router.put("/appeals/bulk-deadlines", async (req, res) => {
   try {
     const { appealIds, deadline, reason } = req.body;
 
-    // Validate input
     if (!appealIds || !Array.isArray(appealIds) || appealIds.length === 0) {
       return res.status(400).json({ message: "Appeal IDs array is required" });
     }
@@ -1873,7 +1734,6 @@ router.put("/appeals/bulk-deadlines", async (req, res) => {
       return res.status(400).json({ message: "Deadline is required" });
     }
 
-    // Validate deadline format and ensure it's in the future
     const deadlineDate = new Date(deadline);
     if (isNaN(deadlineDate.getTime())) {
       return res.status(400).json({ message: "Invalid deadline format" });
@@ -1885,14 +1745,12 @@ router.put("/appeals/bulk-deadlines", async (req, res) => {
         .json({ message: "Deadline must be in the future" });
     }
 
-    // Update all appeals
     const updatePromises = appealIds.map(async (appealId) => {
       const appeal = await Appeal.findById(appealId);
       if (!appeal) return null;
 
       appeal.deadline = deadlineDate;
 
-      // Add to timeline
       appeal.timeline.push({
         action: "deadline_set_bulk",
         description: `Deadline set to ${deadlineDate.toLocaleDateString()} via bulk operation${
@@ -1902,7 +1760,6 @@ router.put("/appeals/bulk-deadlines", async (req, res) => {
         timestamp: new Date(),
       });
 
-      // Add note if reason provided
       if (reason) {
         appeal.notes.push({
           content: `Deadline set via bulk operation: ${deadlineDate.toLocaleDateString()}. Reason: ${reason}`,

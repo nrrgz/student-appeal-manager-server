@@ -414,9 +414,6 @@ router.get("/", auth, requireStudent, async (req, res) => {
   }
 });
 
-// @route   GET /api/appeals/:id/evidence/:filename/download
-// @desc    Download evidence file for a specific appeal
-// @access  Private (Student - own appeal only)
 router.get(
   "/:id/evidence/:filename/download",
   auth,
@@ -428,7 +425,6 @@ router.get(
       console.log("Download request:", { id, filename });
       console.log("Request params:", req.params);
 
-      // Find the appeal and ensure the student owns it
       const appeal = await Appeal.findOne({
         _id: id,
         student: req.user._id,
@@ -530,7 +526,6 @@ router.get("/:id", auth, requireStudent, async (req, res) => {
       evidenceLength: appeal.evidence ? appeal.evidence.length : 0,
     });
 
-    // Ensure evidence is always an array in response
     if (!Array.isArray(appeal.evidence)) {
       appeal.evidence = [];
     }
@@ -549,9 +544,6 @@ router.get("/:id", auth, requireStudent, async (req, res) => {
   }
 });
 
-// @route   POST /api/appeals/:id/notes
-// @desc    Add note to appeal (student's own appeal)
-// @access  Private (Student)
 router.post(
   "/:id/notes",
   [
@@ -561,7 +553,6 @@ router.post(
   ],
   async (req, res) => {
     try {
-      // Check validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });

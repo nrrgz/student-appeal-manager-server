@@ -6,16 +6,14 @@ const path = require("path");
 const fs = require("fs-extra");
 const multer = require("multer");
 
-// Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, "..", "uploads");
-    // Ensure uploads directory exists
+
     fs.ensureDirSync(uploadDir);
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    // Generate unique filename
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     const ext = path.extname(file.originalname);
     cb(null, uniqueSuffix + ext);
@@ -25,10 +23,9 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 10 * 1024 * 1024,
   },
   fileFilter: function (req, file, cb) {
-    // Allow common file types
     const allowedTypes = [
       "image/jpeg",
       "image/png",
@@ -53,12 +50,8 @@ const upload = multer({
 
 const router = express.Router();
 
-// All routes require reviewer role
 router.use(auth, requireReviewer);
 
-// @route   GET /api/reviewer/appeals
-// @desc    Get appeals assigned to reviewer or unassigned appeals
-// @access  Private (Reviewer)
 router.get("/appeals", async (req, res) => {
   try {
     const { page = 1, limit = 10, status, appealType } = req.query;
@@ -66,7 +59,6 @@ router.get("/appeals", async (req, res) => {
       assignedReviewer: req.user._id,
     };
 
-    // Apply filters
     if (status) query.status = status;
     if (appealType) query.appealType = appealType;
 
@@ -97,16 +89,12 @@ router.get("/appeals", async (req, res) => {
   }
 });
 
-// @route   GET /api/reviewer/appeals/:id/evidence/:filename/download
-// @desc    Download evidence file for a specific appeal (reviewer access)
-// @access  Private (Reviewer - assigned appeals only)
 router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
   try {
     const { id, filename } = req.params;
 
     console.log("Reviewer download request:", { id, filename });
 
-    // Find the appeal
     const appeal = await Appeal.findById(id);
 
     if (!appeal) {
@@ -114,7 +102,6 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
       return res.status(404).json({ message: "Appeal not found" });
     }
 
-    // Check if reviewer is assigned to this appeal
     if (
       !appeal.assignedReviewer ||
       appeal.assignedReviewer.toString() !== req.user._id.toString()
@@ -128,7 +115,6 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
     console.log("Appeal found:", appeal._id);
     console.log("Appeal evidence:", appeal.evidence);
 
-    // Find the evidence file
     const evidenceFile = appeal.evidence.find(
       (file) => file.filename === filename || file.originalName === filename
     );
@@ -140,7 +126,6 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
       return res.status(404).json({ message: "Evidence file not found" });
     }
 
-    // Construct the file path
     const filePath = path.join(
       __dirname,
       "..",
@@ -148,13 +133,11 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
       evidenceFile.filename
     );
 
-    // Check if file exists
     if (!(await fs.pathExists(filePath))) {
       console.log("File not found on server:", filePath);
       return res.status(404).json({ message: "File not found on server" });
     }
 
-    // Set response headers for file download
     res.setHeader(
       "Content-Type",
       evidenceFile.mimeType || "application/octet-stream"
@@ -166,7 +149,6 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
       }"`
     );
 
-    // Stream the file
     const fileStream = fs.createReadStream(filePath);
     fileStream.pipe(res);
   } catch (error) {
@@ -175,9 +157,6 @@ router.get("/appeals/:id/evidence/:filename/download", async (req, res) => {
   }
 });
 
-// @route   GET /api/reviewer/appeals/:id
-// @desc    Get specific appeal by ID (reviewer view)
-// @access  Private (Reviewer)
 router.get("/appeals/:id", async (req, res) => {
   try {
     const appeal = await Appeal.findById(req.params.id)
@@ -186,7 +165,6 @@ router.get("/appeals/:id", async (req, res) => {
       .populate("timeline.performedBy", "firstName lastName role")
       .populate("notes.author", "firstName lastName role");
 
-    // Ensure evidence is always an array
     if (!Array.isArray(appeal.evidence)) {
       appeal.evidence = [];
     }
@@ -211,7 +189,6 @@ router.get("/appeals/:id", async (req, res) => {
       evidenceLength: appeal.evidence ? appeal.evidence.length : 0,
     });
 
-    // Check if reviewer is assigned to this appeal
     if (
       !appeal.assignedReviewer ||
       appeal.assignedReviewer.toString() !== req.user._id.toString()
@@ -227,7 +204,6 @@ router.get("/appeals/:id", async (req, res) => {
       evidenceLength: appeal.evidence ? appeal.evidence.length : 0,
     });
 
-    // Ensure evidence is always an array in response
     if (!Array.isArray(appeal.evidence)) {
       appeal.evidence = [];
     }
@@ -249,9 +225,6 @@ router.get("/appeals/:id", async (req, res) => {
   }
 });
 
-// @route   PUT /api/reviewer/appeals/:id/status
-// @desc    Update appeal status
-// @access  Private (Reviewer)
 router.put(
   "/appeals/:id/status",
   [
@@ -278,7 +251,6 @@ router.put(
         return res.status(404).json({ message: "Appeal not found" });
       }
 
-      // Check if reviewer is assigned to this appeal
       if (
         !appeal.assignedReviewer ||
         appeal.assignedReviewer.toString() !== req.user._id.toString()
@@ -292,14 +264,12 @@ router.put(
 
       appeal.status = status;
 
-      // Add to timeline
       appeal.timeline.push({
         action: "Status updated",
         description: `Status changed to: ${status} by reviewer: ${req.user.firstName} ${req.user.lastName}`,
         performedBy: req.user._id,
       });
 
-      // Add note if provided
       if (notes) {
         appeal.notes.push({
           content: notes,
@@ -325,9 +295,6 @@ router.put(
   }
 );
 
-// @route   POST /api/reviewer/appeals/:id/notes
-// @desc    Add internal note to appeal
-// @access  Private (Reviewer)
 router.post(
   "/appeals/:id/notes",
   [
@@ -346,7 +313,6 @@ router.post(
         return res.status(404).json({ message: "Appeal not found" });
       }
 
-      // Check if reviewer is assigned to this appeal
       if (
         appeal.assignedReviewer &&
         appeal.assignedReviewer.toString() !== req.user._id.toString()
@@ -367,7 +333,6 @@ router.post(
       appeal.notes.push(note);
       await appeal.save();
 
-      // Add to timeline
       appeal.timeline.push({
         action: "Note added",
         description: `Internal note added by reviewer: ${req.user.firstName} ${req.user.lastName}`,
@@ -389,9 +354,6 @@ router.post(
   }
 );
 
-// @route   PUT /api/reviewer/appeals/:id/decision
-// @desc    Make decision on appeal
-// @access  Private (Reviewer)
 router.put(
   "/appeals/:id/decision",
   [
@@ -412,7 +374,6 @@ router.put(
         return res.status(404).json({ message: "Appeal not found" });
       }
 
-      // Check if reviewer is assigned to this appeal
       if (
         !appeal.assignedReviewer ||
         appeal.assignedReviewer.toString() !== req.user._id.toString()
@@ -433,7 +394,6 @@ router.put(
 
       appeal.status = "decision made";
 
-      // Add to timeline
       appeal.timeline.push({
         action: "Decision made",
         description: `Decision: ${outcome} - ${reason}`,
@@ -457,9 +417,6 @@ router.put(
   }
 );
 
-// @route   POST /api/reviewer/appeals/:id/evidence
-// @desc    Upload additional evidence files for an appeal (reviewer access)
-// @access  Private (Reviewer - assigned appeals only)
 router.post(
   "/appeals/:id/evidence",
   upload.array("evidence", 10),
@@ -470,7 +427,6 @@ router.post(
       console.log("Reviewer evidence upload request:", { id });
       console.log("Files received:", req.files);
 
-      // Find the appeal
       const appeal = await Appeal.findById(id);
 
       if (!appeal) {
@@ -478,7 +434,6 @@ router.post(
         return res.status(404).json({ message: "Appeal not found" });
       }
 
-      // Check if reviewer is assigned to this appeal
       if (
         !appeal.assignedReviewer ||
         appeal.assignedReviewer.toString() !== req.user._id.toString()
@@ -489,16 +444,14 @@ router.post(
           .json({ message: "You are not assigned to review this appeal" });
       }
 
-      // Process uploaded files
       let processedEvidence = [];
       if (req.files && req.files.length > 0) {
         console.log("Processing uploaded files...");
         processedEvidence = req.files.map((file) => {
           console.log("Processing file:", file);
           return {
-            filename: file.filename, // This is the unique filename stored on disk
-            originalName: file.originalname, // This is the original filename
-            path: file.path, // This is the full path to the file
+            filename: file.filename,
+            originalName: file.originalname,
             fileSize: file.size,
             mimeType: file.mimetype,
             uploadedAt: new Date(),
@@ -512,10 +465,8 @@ router.post(
         return res.status(400).json({ message: "No files uploaded" });
       }
 
-      // Add new evidence to the appeal
       appeal.evidence.push(...processedEvidence);
 
-      // Add to timeline
       appeal.timeline.push({
         action: "Additional evidence uploaded",
         description: `Reviewer uploaded ${processedEvidence.length} additional evidence file(s)`,
@@ -539,16 +490,12 @@ router.post(
   }
 );
 
-// @route   GET /api/reviewer/appeals/dashboard
-// @desc    Get reviewer appeal statistics for dashboard
-// @access  Private (Reviewer)
 router.get("/appeals/dashboard", async (req, res) => {
   try {
     const query = {
       assignedReviewer: req.user._id,
     };
 
-    // Get appeals by status
     const statusCounts = await Appeal.aggregate([
       { $match: query },
       {
@@ -559,7 +506,6 @@ router.get("/appeals/dashboard", async (req, res) => {
       },
     ]);
 
-    // Get appeals by type
     const typeCounts = await Appeal.aggregate([
       { $match: query },
       {
@@ -570,13 +516,11 @@ router.get("/appeals/dashboard", async (req, res) => {
       },
     ]);
 
-    // Get recent appeals
     const recentAppeals = await Appeal.find(query)
       .populate("student", "firstName lastName email studentId")
       .sort({ createdAt: -1 })
       .limit(5);
 
-    // Format status counts
     const statusSummary = {
       submitted: 0,
       "under review": 0,
@@ -604,9 +548,6 @@ router.get("/appeals/dashboard", async (req, res) => {
   }
 });
 
-// @route   GET /api/reviewer/appeals/search
-// @desc    Search appeals with filters (reviewer view)
-// @access  Private (Reviewer)
 router.get("/appeals/search", async (req, res) => {
   try {
     const {
@@ -623,7 +564,6 @@ router.get("/appeals/search", async (req, res) => {
       assignedReviewer: req.user._id,
     };
 
-    // Apply filters
     if (status) query.status = status;
     if (appealType) query.appealType = appealType;
     if (grounds) query.grounds = { $in: [grounds] };

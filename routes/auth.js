@@ -86,7 +86,6 @@ router.post(
   [body("email").isEmail().normalizeEmail(), body("password").notEmpty()],
   async (req, res) => {
     try {
-      // Check validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
@@ -94,7 +93,6 @@ router.post(
 
       const { email, password, role } = req.body;
 
-      // Find user by email
       const user = await User.findOne({ email });
       if (!user) {
         return res.status(400).json({ message: "Invalid credentials" });
@@ -151,7 +149,6 @@ router.put(
   ],
   async (req, res) => {
     try {
-      // Check validation errors
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
