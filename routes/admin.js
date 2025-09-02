@@ -1449,6 +1449,15 @@ router.get("/reports/export-csv", async (req, res) => {
       .populate("assignedAdmin", "firstName lastName")
       .sort({ createdAt: -1 });
 
+    console.log(`Found ${appeals.length} appeals for CSV export`);
+    if (appeals.length > 0) {
+      console.log("First appeal createdAt:", appeals[0].createdAt);
+      console.log(
+        "First appeal formatted date:",
+        new Date(appeals[0].createdAt).toISOString().split("T")[0]
+      );
+    }
+
     const csvHeaders = [
       "Appeal ID",
       "Student Name",
@@ -1474,6 +1483,12 @@ router.get("/reports/export-csv", async (req, res) => {
             )
           : "";
 
+      const submittedDate = appeal.createdAt
+        ? new Date(appeal.createdAt).toISOString().split("T")[0]
+        : appeal.submittedDate
+        ? new Date(appeal.submittedDate).toISOString().split("T")[0]
+        : "N/A";
+
       return [
         appeal.appealId || appeal._id,
         `${appeal.student?.firstName || appeal.firstName} ${
@@ -1488,7 +1503,7 @@ router.get("/reports/export-csv", async (req, res) => {
           : appeal.grounds,
         appeal.status,
         appeal.priority || "",
-        new Date(appeal.createdAt).toLocaleDateString(),
+        submittedDate,
         appeal.assignedReviewer
           ? `${appeal.assignedReviewer.firstName} ${appeal.assignedReviewer.lastName}`
           : "",
@@ -1497,11 +1512,16 @@ router.get("/reports/export-csv", async (req, res) => {
           : "",
         resolutionTime,
       ]
-        .map((field) => `"${field || ""}"`)
+        .map((field) => `"${String(field || "").replace(/"/g, '""')}"`)
         .join(",");
     });
 
     const csvContent = [csvHeaders.join(","), ...csvRows].join("\n");
+
+    console.log("CSV Headers:", csvHeaders.join(","));
+    if (csvRows.length > 0) {
+      console.log("First CSV Row:", csvRows[0]);
+    }
 
     res.setHeader("Content-Type", "text/csv");
     res.setHeader(
